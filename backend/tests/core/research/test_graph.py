@@ -69,7 +69,7 @@ class Models:
     )
 
 
-def _worker_turns() -> list[AIMessage]:
+def worker_turns() -> list[AIMessage]:
     return [
         scripted_turn(tool_calls=[("web_search", {"query": "A speed"})]),
         scripted_turn("Findings:\n- A is fast [1]\nSources:\n- [1] A docs\nConfidence: high\nGaps: none"),
@@ -78,7 +78,7 @@ def _worker_turns() -> list[AIMessage]:
     ]
 
 
-def _lead_turns() -> list[AIMessage]:
+def lead_turns() -> list[AIMessage]:
     return [
         scripted_turn(
             "# A or B\n\nA is fast [1] while B is cheap [2]. Unverified [9].\n\n## Confidence & gaps\nMedium."
@@ -158,7 +158,7 @@ def _data(card: Mapping[str, object]) -> dict[str, object]:
 
 class TestHappyPath:
     async def test_plan_tasks_synthesis_and_citations_in_order(self) -> None:
-        models = Models(worker=ScriptedChatModel(turns=_worker_turns()), lead=ScriptedChatModel(turns=_lead_turns()))
+        models = Models(worker=ScriptedChatModel(turns=worker_turns()), lead=ScriptedChatModel(turns=lead_turns()))
         search = FakeSearchClient(results=RESULTS)
         ctx = make_run_context(search=search)
         result = await _run(_graph(models, SERIAL), ctx)
@@ -226,9 +226,9 @@ class TestHappyPath:
 
 class TestDegradedPaths:
     async def test_a_failed_task_still_synthesizes(self) -> None:
-        worker = ScriptedChatModel(turns=_worker_turns()[:2])
+        worker = ScriptedChatModel(turns=worker_turns()[:2])
         worker.failures[2] = AppError.service_unavailable("LLM provider is busy, please retry")
-        models = Models(worker=worker, lead=ScriptedChatModel(turns=_lead_turns()))
+        models = Models(worker=worker, lead=ScriptedChatModel(turns=lead_turns()))
         ctx = make_run_context(search=FakeSearchClient(results=RESULTS))
         result = await _run(_graph(models, SERIAL, with_checker=False), ctx)
         statuses = {str(card["id"]): _data(card)["status"] for card in result.of_type("data-research-task")}
@@ -240,9 +240,7 @@ class TestDegradedPaths:
         assert result.of_type("data-research-citations") == []
 
     async def test_token_budget_skips_later_tasks(self) -> None:
-        models = Models(
-            worker=ScriptedChatModel(turns=_worker_turns()[:2]), lead=ScriptedChatModel(turns=_lead_turns())
-        )
+        models = Models(worker=ScriptedChatModel(turns=worker_turns()[:2]), lead=ScriptedChatModel(turns=lead_turns()))
         ctx = make_run_context(search=FakeSearchClient(results=RESULTS))
         result = await _run(
             _graph(models, ResearchBudget(max_parallel=1, total_token_budget=20), with_checker=False), ctx
@@ -279,7 +277,7 @@ class TestDegradedPaths:
     async def test_cancel_aborts(self) -> None:
         ctx = make_run_context(search=FakeSearchClient(results=RESULTS))
         ctx.cancel.request("user")
-        result = await _run(_graph(Models(worker=ScriptedChatModel(turns=_worker_turns())), SERIAL), ctx)
+        result = await _run(_graph(Models(worker=ScriptedChatModel(turns=worker_turns())), SERIAL), ctx)
         assert result.types[-1] == "abort"
         assert result.finished.stop.reason == "cancelled"
 
