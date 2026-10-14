@@ -42,7 +42,8 @@ schema; `request-options.ts` — the `path` / `query` option types both transpor
 local-storage), `utils/` (`cn`), `hooks/` (`use-mobile`, written by shadcn), `components/` (shadcn
 `ui/`, AI Elements `ai-elements/`, `form/` — the TanStack Form kit —, `feedback/`, `error-boundary/`). `src/providers/` composes
 Query → Auth → Theme (+ `toaster.tsx`); each provider `.tsx` has a sibling `use-*.ts` with the
-context + hook so react-refresh stays clean. `src/layouts/` are the route shells. `src/App.tsx`
+context + hook so react-refresh stays clean. `src/layouts/` are the route shells (`AuthLayout`,
+`ProtectedLayout`, `ChatLayout` — see Routing). `src/App.tsx`
 and `src/main.tsx` are composition roots. Import direction between these directories is
 enforced by fallow boundaries (see Quality tooling notes).
 
@@ -52,6 +53,16 @@ enforced by fallow boundaries (see Quality tooling notes).
   `shared/constants/query-keys.ts` (hierarchical; `QUERY_KEYS.<feature>.all` is the invalidation
   prefix). Mutations invalidate what still exists and `removeQueries` what a delete made 404.
   Multi-argument mutations take one object so `onSuccess(_, vars)` can destructure.
+  **The one exception is the live chat thread**: `useChat` (`@ai-sdk/react`) owns a
+  conversation's messages while a response streams. `features/chat/hooks/use-conversation-chat.ts`
+  is the only place it is called and keeps the query side honest around it — the thread mounts
+  from the persisted `ConversationDetailOut` (`toChatMessage`, frozen at mount: `useChat` keys
+  its instance by `id`, so a later refetch neither resets the messages nor flips `resume`),
+  resumes when the row had an `activeRun`, patches the streamed `data-conversation-title` into
+  the list/detail caches in `onData`, invalidates both in `onFinish`, and refetches the
+  persisted thread into `setMessages` when a resume finds no run (it finished while we were
+  away). Nothing else reads or writes `useChat` state; the sidebar, the header and the next
+  mount all read the query caches.
 - **Only `apiClient` talks HTTP** — never raw `fetch`/`axios` in a feature (enforced: ESLint bans
   `axios` outside `api-client.ts` and the refresh call in `auth.service.ts`, which must bypass the
   interceptor). The client is **path-typed**: `apiClient.get(API_ENDPOINTS.USERS.ME)`,
@@ -99,8 +110,16 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   restore and 401 refresh are in `auth.service.ts` / `api-client.ts`. Guards: `ProtectedRoute`,
   `GuestRoute` — both wait for `isLoading` before deciding. `useSignOut` must remove every
   feature cache (add to its `removeQueries` predicate as features arrive).
-- **Routing**: paths in `ROUTES`; pages lazy; the protected shell is `layouts/ProtectedLayout.tsx`
-  (cross-route hooks go there, not in pages).
+- **Routing**: paths in `ROUTES`; pages lazy. `layouts/ProtectedLayout.tsx` is a bare shell —
+  the `ProtectedRoute` gate and a route-keyed error boundary, no chrome (cross-route hooks go
+  there, not in pages). `/app` renders `AppIndexRedirect` (`features/teams`): the team in
+  `STORAGE_KEYS.LAST_TEAM_ID` when it is still one of the caller's, else the first. Everything
+  team-scoped lives under `/app/teams/:teamId` in `layouts/ChatLayout.tsx`, which calls
+  `useCurrentTeam()` (validates the id against `GET /api/teams`, remembers it, redirects an
+  unknown one) and owns the shadcn `SidebarProvider` + `ChatSidebar` (team switcher, "New
+  chat", the conversation list, the user/theme/sign-out footer) + a `h-svh` `SidebarInset` for
+  the thread; `chat` and `chat/:conversationId` both render `ChatPage`. There is no `home`
+  feature any more: a signed-in user always lands in a chat.
 - **Styling**: Tailwind utilities + shadcn tokens from `globals.css` (`bg-background`,
   `text-muted-foreground`, …). Dark mode is the `.dark` class set by `ThemeProvider`. `cn()` from
   `@/shared/utils` for class merging.
@@ -117,7 +136,8 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   access token + refresh token so `/users/me` resolves.
 - **MSW with `onUnhandledRequest: "error"`**: every endpoint a test hits needs a handler in
   `src/test/msw/handlers/` (registered in `handlers/index.ts`), built from the typed `make*()`
-  fixtures in `msw/fixtures/`. Handlers register through `mockApi.<verb>(API_ENDPOINTS…, resolver)`
+  fixtures in `msw/fixtures/` (`run-chunks.ts` holds the typed `UIMessageChunk[]` scripts —
+  `textRun`, `webSearchRun`, `codeRun`, `researchRun`, `refusalRun` — the stream mocks replay). Handlers register through `mockApi.<verb>(API_ENDPOINTS…, resolver)`
   (`msw/typed-http.ts`): `request.json()` is the operation's `*In` schema and the response must be
   its `*Out` schema or `errorResponse(status, code)` (`msw/fixtures/error.ts`) — no casts. Override
   per test with `server.use(...)`. Prefer MSW over `vi.mock` for anything HTTP.
@@ -175,8 +195,10 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   `src/components/` literally, the recipe moves the files under `src/shared/`). `message.tsx` and
   `reasoning.tsx` keep only the `@streamdown/code` Streamdown plugin (mermaid / math / cjk are
   uninstalled — they pull bundles the app never renders), and `globals.css` carries the
-  `@source` lines Streamdown's classes need. `@ai-sdk/react` is in `ignoreDependencies` (knip
-  and fallow) until the chat hooks import `useChat`; drop it from both then.
+  `@source` lines Streamdown's classes need. The vendored `entry` globs stay in `knip.json` and
+  `.fallowrc.json` even though the chat feature imports most of the files: sub-components nothing
+  imports yet (`task.tsx`'s file badges, the prompt-input tabs/commands, message branches) are
+  the library's surface, not dead code.
 - **jscpd** fails above 2 % duplication (tests excluded) — extract a component (see
   `shared/components/form/text-field.tsx`, `features/auth/components/auth-card.tsx`) instead of
   raising the threshold. Its `format` list must say `typescript`,
@@ -199,8 +221,9 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   `features/<x>` → shared, providers, other barrels; `shared` imports nothing above it. Fix a
   violation by moving code down (`token-storage`, `refresh-error` moved to `shared/services`)
   or passing data in (`sonner.tsx` takes `theme`), never with `// fallow-ignore-next-line`.
-  The two `WARN … matched 0 reachable files` lines for `features` / `features/home` are
-  expected (home has only a barrel and a page). `.fallow/` is its cache (gitignored).
+  A `WARN … matched 0 reachable files` line for the `features` zone is expected (every file
+  under `src/features/` is claimed by a more specific zone first). `.fallow/` is its cache
+  (gitignored).
 - **TypeScript is pinned to 5.x**: typescript-eslint and madge don't support TS 7 yet.
   **`eslint-plugin-import-x`** (not `eslint-plugin-import`) because ESLint 10.
 - Generated files (`src/shared/api/generated/`, `src/test/contract/openapi.json`) are excluded
@@ -220,7 +243,10 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
    the barrel).
 2. Paths in `API_ENDPOINTS` (spec paths only); routes in `ROUTES` + `App.tsx`; caches in
    `useSignOut`'s cleanup. Types are `Schema<"…">` aliases and the client's inferred results —
-   nothing hand-written.
+   nothing hand-written. A payload the spec types as `unknown` (a tool's output, a `data-*`
+   part) gets a hand-written type anchored with `Narrows<Wire, T>` (`shared/api/types.ts`) and
+   a runtime guard at the one place it is narrowed (`features/chat/utils/payload-guards.ts`),
+   never a cast.
 3. Handlers (`mockApi`) + fixtures in `src/test/msw/`; at least one `*.integration.test.tsx` per
    user flow.
 4. `just check && just test`.
