@@ -9,12 +9,13 @@ from app.core.openapi import error_responses
 from app.core.schemas import BaseSchemaOut
 from app.db.session import async_session_maker
 from app.organizations.router import router as organizations_router
+from app.teams.router import router as teams_router
 from app.users.router import router as users_router
 
 api_router = APIRouter()
 # Any domain route can hit an unhandled error (500) or an unavailable dependency (503: database,
 # Cognito). The health probes are exempt: liveness is always 200, readiness documents its own 503.
-for domain_router in (auth_router, users_router, organizations_router):
+for domain_router in (auth_router, users_router, organizations_router, teams_router):
     api_router.include_router(domain_router, responses=error_responses(500, 503))
 
 

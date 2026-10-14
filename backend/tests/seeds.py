@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import PasswordResetTokenModel
 from app.organizations.models import OrganizationMemberModel, OrganizationModel, OrganizationRole
+from app.teams.models import TeamMemberModel, TeamModel
 from app.users.models import UserModel
 
 
@@ -52,3 +53,20 @@ async def seed_password_reset_token(
     await db.flush()
     await db.refresh(token)
     return token
+
+
+async def seed_team(db: AsyncSession, *, organization: OrganizationModel, name: str, creator: UserModel) -> TeamModel:
+    """A team in ``organization`` created by ``creator``, who is its first member."""
+    team = TeamModel(organization_id=organization.id, name=name, created_by=creator.id)
+    db.add(team)
+    await db.flush()
+    await seed_team_member(db, team, creator)
+    await db.refresh(team)
+    return team
+
+
+async def seed_team_member(db: AsyncSession, team: TeamModel, user: UserModel) -> TeamMemberModel:
+    member = TeamMemberModel(team_id=team.id, user_id=user.id, team=team, user=user)
+    db.add(member)
+    await db.flush()
+    return member
