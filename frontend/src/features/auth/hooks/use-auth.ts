@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 
 import { QUERY_KEYS } from "@/shared/constants/query-keys";
 import { ROUTES } from "@/shared/constants/routes";
+import { STORAGE_KEYS } from "@/shared/constants/storage-keys";
+import { storage } from "@/shared/services/local-storage";
 
 import { authService } from "../services/auth.service";
 import type {
@@ -92,6 +94,8 @@ export function useSignOut() {
       queryClient.removeQueries({
         predicate: (query) => query.queryKey[0] !== QUERY_KEYS.auth.user[0],
       });
+      // Per-user browser state goes too: the team `/app` would reopen for the next sign-in.
+      storage.remove(STORAGE_KEYS.LAST_TEAM_ID);
       navigate(ROUTES.auth.login, { replace: true });
     },
   });
