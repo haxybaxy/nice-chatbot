@@ -4,13 +4,16 @@ Full-stack boilerplate for an app on AWS. Every convention is enforced by a gate
 `tests/guards`, eslint + fallow, pre-commit, CI), not just documented.
 
 - `backend/` — FastAPI · async SQLAlchemy 2 · Alembic · structlog. Auth is backend-proxied AWS
-  Cognito (`/api/auth/*`); password-reset mail goes out through SES. Python 3.13, uv. See
-  `backend/README.md`.
+  Cognito (`/api/auth/*`); password-reset mail goes out through SES. Team-scoped chat runs on a
+  LangGraph worker (`python -m app.worker`) with web search, deep research and a code sandbox,
+  streamed as the AI SDK UI Message Stream and traced with Langfuse. Python 3.13, uv. See
+  `backend/README.md` and `docs/chat-architecture.md`.
 - `frontend/` — React 19 + Vite SPA (TanStack Query + Form, zod, axios, Tailwind 4, shadcn) whose
   wire types are generated from the backend's guarded OpenAPI snapshot. See `frontend/README.md`.
 - `infra/` — OpenTofu for AWS: one Cognito user pool per environment plus the backend's IAM
   policy, state in S3. See `infra/README.md`.
-- `docs/` — `api-contract.md`: the backend → frontend type chain and its gates.
+- `docs/` — `api-contract.md` (the backend → frontend type chain and its gates),
+  `chat-architecture.md` (request → queue → worker → graph → SSE), `adr/` (decisions).
 - `.github/workflows/` — CI per subproject (`just ci`); `.pre-commit-config.yaml` runs the same
   gates on every commit (`uv run --project backend pre-commit install`).
 
@@ -55,7 +58,14 @@ but the stack; first-time setup is in `backend/README.md` and `frontend/README.m
 set up, the root `justfile` runs the whole stack:
 
 ```bash
-just dev        # Postgres (Docker) + migrations, then the API on :8000 and the SPA on :3000 in one terminal
-just mprocs     # the same, one mprocs pane per process (api, web, db logs) — `brew install mprocs`
+just dev        # Postgres (Docker) + migrations, then the API on :8000, the chat worker and the SPA on :3000
+just mprocs     # the same, one mprocs pane per process (api, worker, web, db logs) — `brew install mprocs`
 just db-down    # stop Postgres (data is kept)
 ```
+
+Chat needs keys in `backend/.env`: `ANTHROPIC_API_KEY` (or `OPENAI_BASE_URL` for an
+OpenAI-compatible server plus an `openai:<model>` entry in `LLM_MODELS`), `TAVILY_API_KEY` for web
+search, `SANDBOX_BACKEND=docker` (after `just sandbox-pull` in `backend/`) for code execution, and
+`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` for tracing. Everything degrades gracefully when
+unset: that provider's models, that tool or tracing simply disappear. The containerized backend
+(API + worker) is `docker compose --profile app up --build` in `backend/`.

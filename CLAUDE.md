@@ -17,7 +17,7 @@ placeholders for the project slug, display name, SES sending domain and account.
 | `infra/` | OpenTofu for AWS — one Cognito user pool per environment (`develop` in us-west-1) plus the backend's IAM policy (cognito-idp admin calls, `ses:SendEmail` on the verified SES identity) | `infra/CLAUDE.md` |
 | `.github/workflows/` | CI — `backend.yml` runs `just ci` (all gates + full suite on Postgres) for pushes to `main` and PRs touching `backend/`; `frontend.yml` runs the frontend's `just ci` for `frontend/**` and for the backend OpenAPI snapshot | — |
 | `frontend/` | React 19 + Vite SPA (TanStack Query, TanStack Form + zod, axios, Tailwind 4, shadcn) | `frontend/CLAUDE.md` (authoritative for its conventions; read it before changing frontend code) |
-| `docs/` | `api-contract.md` — the backend → frontend type chain and its gates | — |
+| `docs/` | `api-contract.md` — the backend → frontend type chain and its gates; `chat-architecture.md` — how a chat run flows (queue → worker → LangGraph → event log → SSE → `useChat`); `adr/` — decisions | — |
 
 Root-level tooling is deliberately thin: a `justfile` + `mprocs.yaml` that only run the whole stack
 (`just dev` — Postgres, migrations, API on :8000 and SPA on :3000 in one terminal; `just mprocs` —
