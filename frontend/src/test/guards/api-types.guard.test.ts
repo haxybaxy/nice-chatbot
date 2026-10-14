@@ -49,13 +49,24 @@ describe("generated API type helpers", () => {
 
   it("lists the paths per verb from the generator's `?: never` emission", () => {
     expectTypeOf<PathsWith<"get">>().toEqualTypeOf<
+      | "/api/chat/models"
+      | "/api/conversations/{conversation_id}"
+      | "/api/conversations/{conversation_id}/runs/active"
+      | "/api/conversations/{conversation_id}/runs/{run_id}"
+      | "/api/conversations/{conversation_id}/runs/{run_id}/events"
       | "/api/health"
       | "/api/health/ready"
       | "/api/organizations/{organization_id}"
       | "/api/organizations/{organization_id}/members"
+      | "/api/teams"
+      | "/api/teams/{team_id}"
+      | "/api/teams/{team_id}/conversations"
+      | "/api/teams/{team_id}/members"
       | "/api/users/me"
     >();
-    expectTypeOf<PathsWith<"patch">>().toEqualTypeOf<"/api/users/me">();
+    expectTypeOf<PathsWith<"patch">>().toEqualTypeOf<
+      "/api/conversations/{conversation_id}" | "/api/users/me"
+    >();
     expectTypeOf<PathsWith<"put">>().toEqualTypeOf<never>();
     // No DELETE takes a body today; if one ever does, `apiClient.delete` will refuse it.
     expectTypeOf<BodylessPaths<"delete">>().toEqualTypeOf<PathsWith<"delete">>();
