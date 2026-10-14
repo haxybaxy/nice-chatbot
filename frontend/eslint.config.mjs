@@ -29,6 +29,32 @@ const BAN_SPEC = {
 };
 const restrictedImports = ({ paths = [], patterns = [] }) => ["error", { paths, patterns }];
 
+// Two modules talk HTTP: apiClient (JSON, axios) and the SSE client (`text/event-stream`, fetch).
+// Everything else calls a service. The globals ban is what keeps a stray `fetch(…)` out of a
+// feature; `sse-client.ts` is the one scope where it is turned off.
+const HTTP_GLOBALS_MESSAGE =
+  "Only apiClient (JSON) and src/shared/services/sse-client.ts (event streams) talk HTTP.";
+const BAN_HTTP_GLOBALS = ["fetch", "EventSource", "XMLHttpRequest", "WebSocket"].map((name) => ({
+  name,
+  message: HTTP_GLOBALS_MESSAGE,
+}));
+const BAN_HTTP_PROPERTIES = ["globalThis", "window"].map((object) => ({
+  object,
+  property: "fetch",
+  message: HTTP_GLOBALS_MESSAGE,
+}));
+
+// Registry code we vendor (shadcn `ui/`, AI Elements, the `use-mobile` hook shadcn writes) is
+// kept as shipped so `just ui-add` / `just ai-add` stay diffable against upstream: the size and
+// complexity ceilings, the react-refresh export rule and the three React Compiler diagnostics
+// upstream does not lint with are off there. The import bans, the HTTP-globals ban and
+// `no-explicit-any` stay on — a violation in a registry file is fixed by hand.
+const VENDORED_FILES = [
+  "src/shared/components/ui/**",
+  "src/shared/components/ai-elements/**",
+  "src/shared/hooks/use-mobile.ts",
+];
+
 export default defineConfig([
   globalIgnores(["dist", "coverage", "node_modules", "claudedocs", "src/shared/api/generated"]),
   {
@@ -74,6 +100,8 @@ export default defineConfig([
         paths: [BAN_AXIOS],
         patterns: [BAN_GENERATED, BAN_SPEC],
       }),
+      "no-restricted-globals": ["error", ...BAN_HTTP_GLOBALS],
+      "no-restricted-properties": ["error", ...BAN_HTTP_PROPERTIES],
       // Inline object casts are how hand-written wire shapes sneak in (MSW bodies, error probes).
       "no-restricted-syntax": [
         "error",
@@ -128,6 +156,27 @@ export default defineConfig([
     files: ["src/test/contract/**", "src/test/guards/**"],
     rules: {
       "no-restricted-imports": restrictedImports({ paths: [BAN_AXIOS], patterns: [BAN_GENERATED] }),
+    },
+  },
+  {
+    // The event-stream client: the one sanctioned `fetch`.
+    files: ["src/shared/services/sse-client.ts"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
+    },
+  },
+  {
+    // Vendored registry components (see VENDORED_FILES).
+    files: VENDORED_FILES,
+    rules: {
+      "max-lines": "off",
+      "max-lines-per-function": "off",
+      complexity: "off",
+      "react-refresh/only-export-components": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/static-components": "off",
     },
   },
 ]);
