@@ -48,7 +48,8 @@ describe("LoginForm", () => {
     await user.type(screen.getByLabelText("Password"), "password123");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect(await screen.findByText(/^Welcome/)).toBeInTheDocument();
+    // `/app` sends a signed-in user to their team's chat.
+    expect(await screen.findByRole("heading", { name: "New chat" })).toBeInTheDocument();
     expect(body).toEqual({ email: "me@example.com", password: "password123" });
     expect(localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN)).toBe("refresh-token-1");
   });

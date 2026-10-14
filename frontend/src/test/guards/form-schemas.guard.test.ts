@@ -14,6 +14,8 @@ import {
   signInSchema,
   signUpSchema,
 } from "@/features/auth/schemas/auth-form.schemas";
+import { renameConversationSchema } from "@/features/chat/schemas/conversation-form.schemas";
+import { addTeamMemberSchema, createTeamSchema } from "@/features/teams/schemas/team-form.schemas";
 import openapiSpecRaw from "@/test/contract/openapi.json?raw";
 
 /** The JSON Schema keywords a Pydantic `str` field can carry that a zod string mirrors. */
@@ -147,6 +149,35 @@ describe("form schemas mirror the wire schemas they submit to", () => {
         wireSchema: "ResetPasswordIn",
         form: resetPasswordSchema,
         formOnly: ["confirmPassword"],
+        exempt: [],
+      })
+    ).toEqual([]);
+  });
+
+  it("createTeamSchema matches CreateTeamIn", () => {
+    expect(
+      findDrift({ wireSchema: "CreateTeamIn", form: createTeamSchema, formOnly: [], exempt: [] })
+    ).toEqual([]);
+  });
+
+  it("addTeamMemberSchema matches AddTeamMemberIn", () => {
+    expect(
+      findDrift({
+        wireSchema: "AddTeamMemberIn",
+        form: addTeamMemberSchema,
+        formOnly: [],
+        exempt: [],
+      })
+    ).toEqual([]);
+  });
+
+  it("renameConversationSchema matches UpdateConversationIn", () => {
+    // `visibility` is optional on the wire and not part of the rename form.
+    expect(
+      findDrift({
+        wireSchema: "UpdateConversationIn",
+        form: renameConversationSchema,
+        formOnly: [],
         exempt: [],
       })
     ).toEqual([]);
