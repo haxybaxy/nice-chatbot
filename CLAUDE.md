@@ -83,7 +83,8 @@ just ui-add dialog select                                       # add shadcn com
   (`__init__(session[, cognito])` + `async execute(*, ...)`; use cases return ORM models, routers
   return them and `response_model=*Out` serializes). `teams` exposes team listing/membership routes;
   `chat` holds conversations, messages and runs (the Postgres-backed queue + event log) and the SSE
-  route that streams a run as the AI SDK UI Message Stream. `app/core` holds settings (`Settings`, `AwsSettings`, `CognitoSettings` and the code-fixed
+  route that streams a run as the AI SDK UI Message Stream; `attachments` stores uploaded files
+  (bytes in Postgres, text extracted at upload) that messages reference through `file` parts. `app/core` holds settings (`Settings`, `AwsSettings`, `CognitoSettings` and the code-fixed
   `MailSettings`), `AppError` and the single JSON error envelope (`ErrorOut`, declared on routes
   via `error_responses`), structlog with correlation ids, the request middleware, the Cognito and
   SES mail adapters and JWT security; `app/db`
