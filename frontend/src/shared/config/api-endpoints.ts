@@ -33,4 +33,26 @@ export const API_ENDPOINTS = {
   USERS: {
     ME: "/api/users/me",
   } satisfies Record<string, ApiPath>,
+
+  // Teams (a team belongs to an organization; conversations belong to a team)
+  TEAMS: {
+    MINE: "/api/teams",
+    CREATE: "/api/organizations/{organization_id}/teams",
+    TEAM: "/api/teams/{team_id}",
+    MEMBERS: "/api/teams/{team_id}/members",
+    MEMBER: "/api/teams/{team_id}/members/{user_id}",
+  } satisfies Record<string, ApiPath>,
+
+  // Chat: the model catalog, a team's conversations, a conversation's messages and runs.
+  // RUN_EVENTS is `text/event-stream` — opened by `sse-client.ts`, not `apiClient`.
+  CHAT: {
+    MODELS: "/api/chat/models",
+    CONVERSATIONS: "/api/teams/{team_id}/conversations",
+    CONVERSATION: "/api/conversations/{conversation_id}",
+    MESSAGES: "/api/conversations/{conversation_id}/messages",
+    ACTIVE_RUN: "/api/conversations/{conversation_id}/runs/active",
+    RUN: "/api/conversations/{conversation_id}/runs/{run_id}",
+    CANCEL_RUN: "/api/conversations/{conversation_id}/runs/{run_id}/cancel",
+    RUN_EVENTS: "/api/conversations/{conversation_id}/runs/{run_id}/events",
+  } satisfies Record<string, ApiPath>,
 } as const;

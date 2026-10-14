@@ -105,9 +105,9 @@ export function controllableRunEvents({ firstSeq = 1 }: { firstSeq?: number } = 
 }
 
 /**
- * Register a handler for an event-stream `GET`. `path` is a spec path (today the chat routes are
- * not in the spec yet, so tests stand in another `GET`); the resolver returns
- * `runEventsResponse(...)`, a `controllableRunEvents().response` or an `errorResponse(...)`.
+ * Register a handler for an event-stream `GET` — in practice `API_ENDPOINTS.CHAT.RUN_EVENTS`,
+ * which `handlers/chat.ts` binds to a short text answer; a test overrides it with
+ * `runEventsResponse(...)`, a `controllableRunEvents().resolver` or an `errorResponse(...)`.
  */
 export function mockRunEvents(path: ApiPath, resolver: HttpResponseResolver): HttpHandler {
   return http.get(url(path), resolver);

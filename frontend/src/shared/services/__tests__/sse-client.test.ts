@@ -16,9 +16,9 @@ import { controllableRunEvents, mockRunEvents, runEventsResponse, sseBody } from
 import { mockApi } from "@/test/msw/typed-http";
 import { createFakeJWT } from "@/test/test-utils";
 
-// The chat routes are not in the spec yet, so `GET /api/users/me` stands in: the client needs a
-// `GET` spec path for its typing and nothing else, and the stream handler is a raw `http.get`.
-const STREAM_PATH = API_ENDPOINTS.USERS.ME;
+// The run event stream, with the path segments the spec declares for it.
+const STREAM_PATH = API_ENDPOINTS.CHAT.RUN_EVENTS;
+const PATH = { conversation_id: "conv-1", run_id: "run-1" };
 
 const chunks: UIMessageChunk[] = [
   { type: "start", messageId: "msg-1" },
@@ -53,7 +53,7 @@ describe("openEventStream", () => {
     );
     tokenStorage.setTokens(makeTokens({ accessToken: live }));
 
-    const stream = await openEventStream(STREAM_PATH, {});
+    const stream = await openEventStream(STREAM_PATH, { path: PATH });
 
     expect(headers?.get("authorization")).toBe(`Bearer ${live}`);
     expect(headers?.get("accept")).toBe("text/event-stream");
@@ -76,7 +76,7 @@ describe("openEventStream", () => {
     );
     tokenStorage.setTokens(makeTokens({ accessToken: expiredAccessToken(), refreshToken: "rt-1" }));
 
-    await openEventStream(STREAM_PATH, {});
+    await openEventStream(STREAM_PATH, { path: PATH });
 
     expect(refreshes).toBe(1);
     expect(seen).toEqual([`Bearer ${fresh}`]);
@@ -103,7 +103,7 @@ describe("openEventStream", () => {
     );
     tokenStorage.setTokens(makeTokens({ accessToken: stale, refreshToken: "rt-1" }));
 
-    const stream = await openEventStream(STREAM_PATH, {});
+    const stream = await openEventStream(STREAM_PATH, { path: PATH });
 
     expect(refreshes).toBe(1);
     expect(seen).toEqual([`Bearer ${stale}`, `Bearer ${fresh}`]);
@@ -123,7 +123,7 @@ describe("openEventStream", () => {
     );
     tokenStorage.setTokens(makeTokens({ refreshToken: "rt-1" }));
 
-    const failure = await openEventStream(STREAM_PATH, {}).catch((e: unknown) => e);
+    const failure = await openEventStream(STREAM_PATH, { path: PATH }).catch((e: unknown) => e);
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).status).toBe(401);
@@ -142,7 +142,7 @@ describe("openEventStream", () => {
     );
     tokenStorage.setTokens(makeTokens({ refreshToken: "rt-1" }));
 
-    const failure = await openEventStream(STREAM_PATH, {}).catch((e: unknown) => e);
+    const failure = await openEventStream(STREAM_PATH, { path: PATH }).catch((e: unknown) => e);
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).status).toBe(401);
@@ -161,7 +161,7 @@ describe("openEventStream", () => {
     tokenStorage.setTokens(makeTokens());
     localStorage.clear(); // access token in memory, refresh token gone
 
-    const failure = await openEventStream(STREAM_PATH, {}).catch((e: unknown) => e);
+    const failure = await openEventStream(STREAM_PATH, { path: PATH }).catch((e: unknown) => e);
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).message).toBe(SESSION_ENDED_MESSAGE);
@@ -173,7 +173,7 @@ describe("openEventStream", () => {
     server.use(mockRunEvents(STREAM_PATH, () => errorResponse(403, "FORBIDDEN", "Not a member")));
     tokenStorage.setTokens(makeTokens());
 
-    const failure = await openEventStream(STREAM_PATH, {}).catch((e: unknown) => e);
+    const failure = await openEventStream(STREAM_PATH, { path: PATH }).catch((e: unknown) => e);
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).status).toBe(403);
@@ -195,11 +195,11 @@ describe("openEventStream", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(openEventStream(STREAM_PATH, { signal: controller.signal })).rejects.toMatchObject(
-      {
-        name: "AbortError",
-      }
-    );
+    await expect(
+      openEventStream(STREAM_PATH, { path: PATH, signal: controller.signal })
+    ).rejects.toMatchObject({
+      name: "AbortError",
+    });
     expect(hits).toBe(0);
   });
 
@@ -209,7 +209,7 @@ describe("openEventStream", () => {
     tokenStorage.setTokens(makeTokens());
     const controller = new AbortController();
 
-    const stream = await openEventStream(STREAM_PATH, { signal: controller.signal });
+    const stream = await openEventStream(STREAM_PATH, { path: PATH, signal: controller.signal });
     const reader = stream.getReader();
     const first: UIMessageChunk = { type: "start", messageId: "msg-1" };
     events.push(first);
@@ -228,7 +228,7 @@ describe("openEventStream", () => {
     server.use(mockRunEvents(STREAM_PATH, () => runEventsResponse(chunks, { firstSeq: 7 })));
     tokenStorage.setTokens(makeTokens());
 
-    const stream = await openEventStream(STREAM_PATH, {});
+    const stream = await openEventStream(STREAM_PATH, { path: PATH });
     const results = await collect(parseJsonEventStream({ stream, schema: uiMessageChunkSchema }));
 
     expect(results.map((result) => (result.success ? result.value : result.error))).toEqual(chunks);

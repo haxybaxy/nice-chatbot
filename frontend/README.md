@@ -30,20 +30,21 @@ for pushes to `main` and pull requests.
 ```
 src/
 ├── main.tsx            StrictMode → ErrorBoundary → BrowserRouter → Providers → App
-├── App.tsx             routes: /auth/{login,sign-up} (guest only) · /app (protected) · * → login
+├── App.tsx             routes: /auth/* (guest only) · /app → last team · /app/teams/:teamId/chat[/:conversationId] · * → login
 ├── globals.css         Tailwind 4 + shadcn tokens (oklch), light/dark via the `.dark` class
-├── layouts/            AuthLayout (centered card), ProtectedLayout (header + ProtectedRoute gate)
+├── layouts/            AuthLayout (centered card), ProtectedLayout (the ProtectedRoute gate), ChatLayout (team sidebar + thread inset)
 ├── providers/          QueryProvider → AuthProvider → ThemeProvider (+ AppToaster); `use-*.ts` hooks
 ├── shared/
 │   ├── api/            `Schema<"UserOut">` over generated/schema.d.ts (from the OpenAPI snapshot)
 │   ├── config/         api-endpoints.ts — every path the app calls
 │   ├── constants/      app (APP_NAME), routes, query-keys, storage-keys
-│   ├── services/       api-client (axios + bearer + 401 refresh), auth-bridge, token-storage, refresh-error, local-storage
+│   ├── services/       api-client (axios + bearer + 401 refresh), sse-client (event streams), api-error, auth-bridge, token-storage, refresh-error, local-storage
 │   ├── utils/          cn()
-│   └── components/     ui/ (shadcn), feedback/ (Spinner, Loading), error-boundary/
+│   └── components/     ui/ (shadcn), ai-elements/ (Vercel AI Elements), form/ (TanStack Form kit), feedback/, error-boundary/
 ├── features/
 │   ├── auth/           components · hooks · pages · schemas · services · types · __tests__
-│   └── home/           the signed-in landing page
+│   ├── teams/          the caller's teams: switcher, members, `/app` redirect
+│   └── chat/           conversations, the `useChat` transport over the run event stream, AI Elements thread + composer
 └── test/               vitest setup, MSW server/handlers/fixtures (`mockApi`), contract validator + openapi.json, guards/
 ```
 

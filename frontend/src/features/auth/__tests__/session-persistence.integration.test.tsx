@@ -16,7 +16,7 @@ import { renderWithProviders } from "@/test/render-with-providers";
  * with a refresh token in localStorage must land on the protected page, not on login.
  */
 describe("session persistence across reloads", () => {
-  it("restores the session from the refresh token alone and shows the home page", async () => {
+  it("restores the session from the refresh token alone and opens the team chat", async () => {
     const calls: string[] = [];
     server.use(
       mockApi.post(API_ENDPOINTS.AUTH.REFRESH, () => {
@@ -35,8 +35,9 @@ describe("session persistence across reloads", () => {
 
     renderWithProviders(<App />, { authenticated: false, route: "/app" });
 
-    expect(await screen.findByText("Welcome, Persisted User")).toBeInTheDocument();
-    expect(screen.getByText("persisted@example.com", { selector: "dd" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "New chat" })).toBeInTheDocument();
+    // The signed-in user is named in the sidebar footer.
+    expect(screen.getByText("persisted@example.com")).toBeInTheDocument();
     expect(calls).toEqual(["refresh", "me"]);
   });
 
@@ -52,7 +53,7 @@ describe("session persistence across reloads", () => {
 
     renderWithProviders(<App />, { authenticated: false, route: "/auth/login" });
 
-    expect(await screen.findByText(/^Welcome/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "New chat" })).toBeInTheDocument();
   });
 
   it("signs out: revokes on the backend, forgets the tokens and returns to login", async () => {

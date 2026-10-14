@@ -72,3 +72,12 @@ export type SuccessBody<P extends PathsWith<M>, M extends HttpMethod> =
   Operation<P, M> extends { responses: infer R }
     ? { [S in keyof R & SuccessStatus]: ResponseJson<R[S]> }[keyof R & SuccessStatus]
     : never;
+
+/**
+ * Anchor for a hand-written type that NARROWS a wire shape the spec leaves open — an `unknown`
+ * payload with a documented structure (a tool's `output`, a `data-*` part's `data`) or an
+ * invariant OpenAPI cannot express. `Narrows<Wire, T>` is just `T`, but it compiles only while
+ * `T` is assignable to `Wire`, so the hand-written type stays inside what the backend declares
+ * and is re-checked the day the backend tightens the schema. See docs/api-contract.md.
+ */
+export type Narrows<Wire, T extends Wire> = T;
