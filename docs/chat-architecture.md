@@ -40,8 +40,10 @@ Worker (python -m app.worker)
 4. Cancel: `POST …/runs/{run}/cancel` flips `cancel_requested_at` and notifies `run_control`;
    the worker stops between chunks and emits `abort`.
 5. Loss: a running run whose heartbeat is older than `WORKER_STALE_AFTER_S` is re-queued once
-   (`attempt = 2`); the next worker emits `reset-step` and resumes the LangGraph thread from its
-   checkpoint. A second loss fails the run with the partial message folded from the log.
+   (`attempt = 2`); the next worker resumes the LangGraph thread from its checkpoint (or restarts
+   the turn when no checkpoint exists), emitting `reset-step` first only when the prior log ended
+   inside an open step so the client drops exactly the partial step. `message.parts` is always the
+   fold of the whole event log. A second loss fails the run with the partial message kept.
 
 ## Resume protocol (client)
 

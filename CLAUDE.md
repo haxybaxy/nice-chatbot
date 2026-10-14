@@ -81,14 +81,20 @@ just ui-add dialog select                                       # add shadcn com
 - `app/` is package-by-feature: `auth`, `users`, `organizations`, `teams`, each with `router` /
   `schemas` / `models` / `repository` / `dependencies` and one class per file under `use_cases/`
   (`__init__(session[, cognito])` + `async execute(*, ...)`; use cases return ORM models, routers
-  return them and `response_model=*Out` serializes). `teams` has no routes yet — models, repository
-  and `CreateTeam` only. `app/core` holds settings (`Settings`, `AwsSettings`, `CognitoSettings` and the code-fixed
+  return them and `response_model=*Out` serializes). `teams` exposes team listing/membership routes;
+  `chat` holds conversations, messages and runs (the Postgres-backed queue + event log) and the SSE
+  route that streams a run as the AI SDK UI Message Stream. `app/core` holds settings (`Settings`, `AwsSettings`, `CognitoSettings` and the code-fixed
   `MailSettings`), `AppError` and the single JSON error envelope (`ErrorOut`, declared on routes
   via `error_responses`), structlog with correlation ids, the request middleware, the Cognito and
   SES mail adapters and JWT security; `app/db`
   holds the declarative base, engine, `get_db`, `DatabaseSettings` and Alembic. `app/api.py` and
   `app/main.py` are composition roots that nothing else imports. These rules are enforced by
   `backend/tests/guards/` and ruff bans, not just documented.
+- Chat runs execute in the worker (`app/worker.py`, `just worker`): it claims queued runs, builds a
+  LangGraph graph from `app/core/agent` (models via `app/core/llm`, tools via `app/core/tools` over
+  the Tavily `SearchClient` and the Docker `SandboxClient`, deep research via `app/core/research`),
+  streams chunks into `run_event` and folds them into `message.parts`, traced by Langfuse through
+  `app/core/observability`. `docs/chat-architecture.md` has the full flow.
 - A request commits through `get_db` (`Depends(get_db, scope="function")`, so the commit happens
   before the response is sent); repositories only `flush()`. A domain may import another domain's
   `models` and `use_cases`, never its `repository`, `schemas`, `router` or `dependencies` —
