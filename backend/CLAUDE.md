@@ -198,7 +198,7 @@ library forces a rule off, scope it to that file with a commented header.
   declarations look unused to it). A genuinely unused function or method fails `just check` —
   delete it rather than whitelisting. Names read only via serialization or from outside `app/`
   go in `[tool.vulture].ignore_names` with a comment.
-- **deptry**: `uvicorn` and `psycopg` are declared-but-unimported by design (DEP002 ignores).
+- **deptry**: `uvicorn` (CLI entrypoint) and `langgraph-checkpoint-postgres` (imported through the `langgraph` namespace) are declared-but-unimported by design (DEP002 ignores); `psycopg` is imported directly by `app/db/listen.py`.
 - **sentrux** is the PyPI release (0.1.x), older than the brew binary. Its `max_cc` is summed per
   file and `max_fn_lines` is file lines ÷ function count; see `app/.sentrux/rules.toml`. Cycles
   are locked at zero and it counts lazy/`TYPE_CHECKING` imports, so don't hide a cycle behind a
