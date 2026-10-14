@@ -10,7 +10,15 @@ import {
   type RuntimeRequestOptions,
   substitutePathParams,
 } from "../api/request-options";
-import type { BodylessPaths, HttpMethod, PathsWith, RequestBody, SuccessBody } from "../api/types";
+import type {
+  BodylessPaths,
+  FormPaths,
+  HttpMethod,
+  JsonPaths,
+  PathsWith,
+  RequestBody,
+  SuccessBody,
+} from "../api/types";
 import { API_ENDPOINTS } from "../config/api-endpoints";
 
 // `ApiError` lives in ./api-error (shared with the SSE client); re-exported for the import sites
@@ -27,6 +35,8 @@ export { ApiError } from "./api-error";
 type RequestOptions<P extends PathsWith<M>, M extends HttpMethod> = {
   /** Skip the Authorization header and the auto-refresh on 401 (public endpoints). */
   skipAuth?: boolean;
+  /** Aborting it cancels the request (an upload the user withdrew, an unmounted reader). */
+  signal?: AbortSignal;
 } & PathOption<P, M> &
   QueryOption<P, M>;
 
@@ -58,6 +68,15 @@ type BodyArgs<P extends PathsWith<M>, M extends HttpMethod> = P extends unknown
 /** The type-erased view `request()` works with. */
 interface RuntimeOptions extends RuntimeRequestOptions {
   skipAuth?: boolean;
+  signal?: AbortSignal;
+}
+
+/** How the body goes out and how the response comes back; JSON both ways unless told otherwise. */
+interface Encoding {
+  /** `form`: send the `FormData` as is, with no `Content-Type` so axios lets the browser set the boundary. */
+  body?: "form";
+  /** `blob`: resolve with the raw bytes instead of parsed JSON. */
+  response?: "blob";
 }
 
 // ── Error envelope ───────────────────────────────────────────────────────────────────────────
@@ -235,14 +254,14 @@ class ApiClient {
     return this.request("get", path, undefined, options);
   }
 
-  async post<P extends PathsWith<"post">>(
+  async post<P extends JsonPaths<"post">>(
     path: P,
     ...[body, options]: BodyArgs<P, "post">
   ): Promise<SuccessBody<P, "post">> {
     return this.request("post", path, body, options);
   }
 
-  async patch<P extends PathsWith<"patch">>(
+  async patch<P extends JsonPaths<"patch">>(
     path: P,
     ...[body, options]: BodyArgs<P, "patch">
   ): Promise<SuccessBody<P, "patch">> {
@@ -256,18 +275,49 @@ class ApiClient {
     return this.request("delete", path, undefined, options);
   }
 
-  private async request<P extends PathsWith<M>, M extends HttpMethod>(
+  /**
+   * `POST P` as `multipart/form-data` — the operations whose request body the spec declares as
+   * multipart (`FormPaths`; the JSON verbs refuse them). The field names come from
+   * `FormBody<P, "post">`; the `FormData` is sent as is, with no JSON content type, so the
+   * browser writes the boundary. Bearer + refresh as for every other call.
+   */
+  async upload<P extends FormPaths<"post">>(
+    path: P,
+    form: FormData,
+    ...[options]: OptionsArgs<P, "post">
+  ): Promise<SuccessBody<P, "post">> {
+    return this.request("post", path, form, options, { body: "form" });
+  }
+
+  /**
+   * `GET P` resolving with the response bytes as a `Blob` — for the binary routes (an
+   * attachment's content). The route is bearer-protected like every other, which is why its URL
+   * is never used as a raw `src`: fetch it here and show an object URL.
+   */
+  async blob<P extends BodylessPaths<"get">>(
+    path: P,
+    ...[options]: OptionsArgs<P, "get">
+  ): Promise<Blob> {
+    return this.request<P, "get", Blob>("get", path, undefined, options, { response: "blob" });
+  }
+
+  private async request<P extends PathsWith<M>, M extends HttpMethod, R = SuccessBody<P, M>>(
     method: M,
     path: P,
     body: unknown,
-    options: RuntimeOptions | undefined
-  ): Promise<SuccessBody<P, M>> {
-    const response = await this.axiosInstance.request<SuccessBody<P, M>>({
+    options: RuntimeOptions | undefined,
+    encoding: Encoding = {}
+  ): Promise<R> {
+    const response = await this.axiosInstance.request<R>({
       method,
       url: substitutePathParams(path, options?.path),
       data: body,
       params: options?.query,
+      signal: options?.signal,
       metadata: { skipAuth: options?.skipAuth },
+      // Unsetting the instance default lets axios (and the browser) set the multipart boundary.
+      ...(encoding.body === "form" ? { headers: { "Content-Type": undefined } } : {}),
+      ...(encoding.response === "blob" ? { responseType: "blob" } : {}),
     });
     return response.data;
   }

@@ -21,5 +21,15 @@ export const QUERY_KEYS = {
     conversations: (teamId: string) => ["chat", "conversations", teamId] as const,
     /** One conversation with its persisted messages. */
     conversation: (conversationId: string) => ["chat", "conversation", conversationId] as const,
+    /** Prefix of every attachment query (the object-URL revocation matches on it). */
+    attachments: ["chat", "attachment"] as const,
+    /**
+     * One attachment's bytes as an object URL (`GET /api/attachments/{id}/content`); revoked
+     * when the query is garbage-collected (`features/chat/hooks/use-attachments.ts`).
+     */
+    attachment: (attachmentId: string) => ["chat", "attachment", attachmentId] as const,
+    /** One attachment's metadata (`GET /api/attachments/{id}`). */
+    attachmentMeta: (attachmentId: string) =>
+      ["chat", "attachment", attachmentId, "meta"] as const,
   },
 } as const;

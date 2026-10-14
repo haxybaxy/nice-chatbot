@@ -55,4 +55,13 @@ export const API_ENDPOINTS = {
     CANCEL_RUN: "/api/conversations/{conversation_id}/runs/{run_id}/cancel",
     RUN_EVENTS: "/api/conversations/{conversation_id}/runs/{run_id}/events",
   } satisfies Record<string, ApiPath>,
+
+  // Attachments: uploaded per team before the message that claims them. UPLOAD is multipart
+  // (`apiClient.upload`); CONTENT serves the bytes (`apiClient.blob` — bearer-protected, so it
+  // is never used as a raw `src`).
+  ATTACHMENTS: {
+    UPLOAD: "/api/teams/{team_id}/attachments",
+    ATTACHMENT: "/api/attachments/{attachment_id}",
+    CONTENT: "/api/attachments/{attachment_id}/content",
+  } satisfies Record<string, ApiPath>,
 } as const;

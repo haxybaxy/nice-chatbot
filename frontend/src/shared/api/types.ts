@@ -46,10 +46,29 @@ type JsonContent<T> = T extends { content: { "application/json": infer B } } ? B
 export type RequestBody<P extends PathsWith<M>, M extends HttpMethod> =
   Operation<P, M> extends { requestBody?: infer RB } ? JsonContent<RB> : never;
 
-/** `PathsWith<M>` minus the operations that declare a request body (for the bodyless verbs). */
-export type BodylessPaths<M extends HttpMethod> = {
-  [P in PathsWith<M>]: [RequestBody<P, M>] extends [never] ? P : never;
+/** The `multipart/form-data` schema inside a requestBody entry, else `never`. */
+type FormContent<T> = T extends { content: { "multipart/form-data": infer B } } ? B : never;
+
+/**
+ * The multipart body of `M P` as the generator spells it (`{ file: string }` — each field a
+ * string, binaries included); `never` for a JSON or bodyless operation. The field names are
+ * what `apiClient.upload` expects on its `FormData`.
+ */
+export type FormBody<P extends PathsWith<M>, M extends HttpMethod> =
+  Operation<P, M> extends { requestBody?: infer RB } ? FormContent<RB> : never;
+
+/** The operations whose request body is `multipart/form-data` (`apiClient.upload`). */
+export type FormPaths<M extends HttpMethod> = {
+  [P in PathsWith<M>]: [FormBody<P, M>] extends [never] ? never : P;
 }[PathsWith<M>];
+
+/** `PathsWith<M>` minus the multipart operations: what the JSON verbs (`post`, `patch`) accept. */
+export type JsonPaths<M extends HttpMethod> = Exclude<PathsWith<M>, FormPaths<M>>;
+
+/** `JsonPaths<M>` minus the operations that declare a request body (for the bodyless verbs). */
+export type BodylessPaths<M extends HttpMethod> = {
+  [P in JsonPaths<M>]: [RequestBody<P, M>] extends [never] ? P : never;
+}[JsonPaths<M>];
 
 /** Templated `{segments}` of `P` as an object (`{ organization_id: string }`); `never` when none. */
 export type PathParams<P extends PathsWith<M>, M extends HttpMethod> =
