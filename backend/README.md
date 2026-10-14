@@ -11,7 +11,15 @@ just db-up                # Postgres 18 in Docker, creates the `nicechatbot` and
 uv sync                   # runtime + dev dependencies into .venv
 just migrate              # alembic upgrade head
 just dev                  # http://localhost:8000 — Swagger UI at /docs (local/develop tiers only)
+just worker               # the chat run worker (second terminal); `just dev` at the repo root starts both
 ```
+
+Chat needs provider keys in `.env` — `ANTHROPIC_API_KEY` (or `OPENAI_BASE_URL` for an
+OpenAI-compatible server plus an `openai:<model>` entry in `LLM_MODELS`), `TAVILY_API_KEY` for
+web search, `SANDBOX_BACKEND=docker` (after `just sandbox-pull`) for code execution and
+`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` for tracing. Each is optional: without it that
+provider's models, that tool or tracing simply disappear. `docs/chat-architecture.md` explains how
+a message becomes a streamed, persisted, traced answer.
 
 ```bash
 just check                # ruff · basedpyright (strict, no `Any`) · vulture · deptry · sentrux · uv lock --check · guards
@@ -35,13 +43,19 @@ test, and if the OpenAPI document changed without `just openapi-snapshot`. The f
 app/
 ├── main.py             app factory: logging, CORS, request middleware, routers, error handlers, lifespan
 ├── api.py              router composition + GET /api/health, GET /api/health/ready
+├── worker.py           the run worker: claims queued chat runs, runs the LangGraph graph, streams + persists
 ├── core/               config (pydantic-settings), errors + JSON envelope, structlog, request middleware,
-│                       Cognito + SES mail adapters, JWT verification / CurrentUserDep, shared schema bases
-├── db/                 declarative Base + TimestampMixin, engine + get_db, model registry, migrations/
+│                       Cognito + SES mail adapters, JWT verification / CurrentUserDep, shared schema bases,
+│                       SSE response + AI SDK chunk vocabulary, llm/ tools/ agent/ research/ (the chat runtime),
+│                       search (Tavily), sandbox (Docker), observability (Langfuse), prompts
+├── db/                 declarative Base + TimestampMixin, engine + get_db/session_scope, LISTEN/NOTIFY, model registry, migrations/
 ├── auth/               POST /api/auth/{signup,signin,refresh,signout,forgot-password,reset-password}
 ├── users/              GET/PATCH/DELETE /api/users/me
-├── organizations/      POST/GET /api/organizations, GET/POST/DELETE …/members
-└── teams/              no routes yet: CreateTeam, called by sign-up for the default team
+├── organizations/      POST/GET /api/organizations, GET/POST/DELETE …/members, POST …/teams
+├── teams/              GET /api/teams, GET /api/teams/{id}, GET/POST/DELETE …/members
+└── chat/               conversations, messages, runs: POST/GET /api/teams/{id}/conversations, GET/PATCH/DELETE
+                        /api/conversations/{id}, POST …/messages, GET …/runs/active|{run}, POST …/cancel,
+                        GET …/runs/{run}/events (SSE), GET /api/chat/models
 ```
 
 Each domain is flat: `router.py`, `schemas.py`, `models.py`, `repository.py`, `dependencies.py` and
@@ -126,10 +140,12 @@ can return.
 ## Container
 
 ```bash
-docker build -t nicechatbot-backend .
-docker run --rm -p 8000:8000 --env-file .env \
-  -e DATABASE_URL=postgresql+psycopg://postgres:postgres@host.docker.internal:5432/nicechatbot nicechatbot-backend
+docker compose --profile app up --build     # Postgres + API (:8000) + worker, from .env
+docker build -t nicechatbot-backend .       # the API image alone (target `runtime`; `--target worker` for the worker)
 ```
+
+The worker service mounts the Docker socket so the `run_code` sandbox can start containers —
+local development only; a deployment uses a dedicated sandbox host or a hosted sandbox adapter.
 
 ## Known gaps
 

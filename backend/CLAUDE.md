@@ -10,6 +10,7 @@ gate fails, fix the code to match the convention; do not loosen the gate.
 ```bash
 uv sync                          # install
 just dev                         # uvicorn with reload on :8000
+just worker                      # the chat run worker with reload (python -m app.worker)
 just check                       # fmt + lint + typecheck + deadcode + deps + audit + lock-check + guards — before every commit
 just guards                      # tests/guards only (architecture, routes, OpenAPI, schemas, settings, DB, migrations) — no Docker
 just test                        # pytest (needs `just db-up`); `just test -k signup` for a subset
@@ -19,7 +20,9 @@ just migration "msg" && just migrate && just migrate-check
 ```
 
 Python 3.13 · uv · FastAPI · async SQLAlchemy 2 (`postgresql+psycopg`) · Alembic · pydantic v2 ·
-structlog · pyjwt · boto3 (Cognito, SES). Follows
+structlog · pyjwt · boto3 (Cognito, SES) · LangGraph + LangChain (`langchain-anthropic`,
+`langchain-openai`) · Langfuse · httpx (Tavily). Chat runs execute in a second process, the worker
+(`app/worker.py`), fed by a Postgres queue — `docs/chat-architecture.md` has the flow. Follows
 [fastapi-best-practices](https://github.com/zhanymkanov/fastapi-best-practices); deliberate
 divergences: one central `AppError` instead of per-domain `exceptions.py`, singular table names,
 `asyncio.to_thread` rather than `run_in_threadpool`.
@@ -38,9 +41,13 @@ app/<domain>/
 
 A domain directory contains exactly these entries (guard: no `service.py`, `utils.py`, …).
 `app/core` (config, errors, logging, middleware, Cognito and SES mail adapters, JWT security,
-schema bases, OpenAPI helpers), `app/db` (Base, engine, `get_db`, model registry, DB settings, migrations),
-`app/api.py` (router composition + health), `app/main.py` (app factory). Nothing under `app/`
-imports `api.py` or `main.py` (guard).
+schema bases, OpenAPI helpers, the SSE response, the AI SDK chunk vocabulary in `ui_stream.py` /
+`ui_fold.py`, and the chat runtime: `llm/` (catalog + LangChain model builder), `tools/`, `agent/`
+(the LangGraph graph, stream mapper, checkpointer), `research/`, `search.py`, `sandbox.py`,
+`observability.py`, `prompts.py`), `app/db` (Base, engine, `get_db` + `session_scope`, the
+LISTEN/NOTIFY `listen.py`, model registry, DB settings, migrations), `app/api.py` (router
+composition + health), `app/main.py` (app factory), `app/worker.py` (the run worker). Nothing under
+`app/` imports `api.py`, `main.py` or `worker.py` (guard).
 
 ### Use-case shape
 
@@ -54,9 +61,13 @@ class InviteMember:
         ...                                             # business args keyword-only; return models, never schemas
 ```
 
-The constructor is the DI seam and takes only `session`, `cognito` and/or `mail`; `execute` is the
-single public method and carries only keyword business arguments; raise `AppError.<factory>()`
-on rule violations. A result that spans several objects is a frozen `@dataclass` next to the use
+The constructor is the DI seam and takes only the names in `INIT_PARAMS`
+(`tests/guards/test_use_cases.py`): `session` (the request transaction), `sessions` (a
+`SessionScope` factory, for use cases that outlive one transaction — the worker loop, the SSE
+tail — each opening a short `session_scope()` per database step), and the adapters `cognito`,
+`mail`, `llm` (chat-model factory), `tools` (tool registry), `tracer`, `checkpointer`, `listener`,
+`search`, `sandbox`; `execute` is the single public method and carries only keyword business
+arguments; raise `AppError.<factory>()` on rule violations. A result that spans several objects is a frozen `@dataclass` next to the use
 case (`AuthSession`). Need a second lookup? Write a second use case (`FindUserByEmail`), not a
 second method. (`tests/guards/test_use_cases.py`.)
 
@@ -70,8 +81,9 @@ second method. (`tests/guards/test_use_cases.py`.)
   `router.py` never imports `repository` or `sqlalchemy` and contains no `try`; `repository.py`
   never imports `fastapi`, `schemas`, `use_cases`; `models.py` never imports `fastapi`, `pydantic`,
   `schemas`; `schemas.py` never imports `sqlalchemy`, `repository`, `use_cases` or `datetime`.
-- `.commit()` / `.rollback()` exist only in `app/db/session.py`; routers never call
-  `model_validate` / `model_dump` / `JSONResponse`; domain code raises only `AppError`.
+- `.commit()` / `.rollback()` exist only in `app/db/session.py` (`get_db` for requests,
+  `session_scope()` for everything else); routers never call `model_validate` / `model_dump` /
+  `JSONResponse`; domain code raises only `AppError`.
 - `app/core/cognito.py` and `app/core/mail.py` are shared infrastructure (auth and users both need
   Cognito; any domain may send mail) — that is why they are not inside `auth/`.
 
@@ -100,7 +112,20 @@ second method. (`tests/guards/test_use_cases.py`.)
   (`tests/guards/test_openapi.py`).
 - **Transactions**: repositories `flush()`; `get_db` commits when the request succeeds and rolls
   back otherwise. `DbDep` uses `Depends(get_db, scope="function")` so the commit happens *before*
-  the response is sent — guarded.
+  the response is sent — guarded. Code that outlives a request (the worker, an SSE tail) never
+  holds a transaction across a network `await`: it opens `session_scope()` per step. A
+  `StreamingResponse` body runs after the request session is closed, so it uses `sessions` too.
+- **Streaming**: the one non-JSON route is the run event stream (`GET …/runs/{run_id}/events`),
+  an `UIMessageStreamResponse` (`app/core/sse.py`) replaying `run_event` rows as AI SDK UI chunks
+  (`app/core/ui_stream.py`) with `id: <seq>` frames, then tailing `LISTEN run_events` through
+  `PgListener` (`app/db/listen.py`, a dedicated autocommit psycopg connection, never the pool).
+  `tests/guards/test_routes.py` exempts `text/event-stream` responses from the `response_model`
+  rule; error responses are still the JSON envelope (`json_error_envelopes` in `app/core/openapi.py`).
+- **Runs**: the `run` row is the queue (claimed with `FOR UPDATE SKIP LOCKED`, heartbeated, reaped),
+  `run_event` the ordered chunk log, `LISTEN/NOTIFY` the wake-up (`run_queue`, `run_events`,
+  `run_control`). Every worker-side write is fenced by `worker_id` + `status = 'running'`; the
+  `(run_id, seq)` unique constraint is the backstop. Persisted `message.parts` mirror the UI message
+  shape (`fold_parts`), `provider_messages` keep the turn's LangChain messages verbatim.
 - **Dependencies**: `Annotated[T, Depends(fn)]` aliases named `*Dep`; every dependency —
   including pure factories — is `async def` (a sync dependency costs a threadpool hop per
   request). Validate in dependencies (`get_membership` resolves `{organization_id}` and 404s);
@@ -112,9 +137,15 @@ second method. (`tests/guards/test_use_cases.py`.)
   Correlation id and user id are attached automatically.
 - **Config**: settings objects, each read only by the code that needs it: `settings`
   (`Settings`: tier, identity, `FRONTEND_URL`, logging, CORS), `aws_settings` (`AwsSettings`:
-  static boto3 credentials shared by the AWS adapters) and `cognito_settings`
-  (`CognitoSettings`: the pool and its region) in `app/core/config.py`; `db_settings`
-  (`DatabaseSettings`) in `app/db/config.py` — so Alembic needs only `DATABASE_URL`. Every env
+  static boto3 credentials shared by the AWS adapters), `cognito_settings`
+  (`CognitoSettings`: the pool and its region), `chat_settings` / `worker_settings` (run limits,
+  the worker loop), `llm_settings` / `agent_settings` (providers, the model allowlist, agent
+  budgets), `search_settings` / `sandbox_settings` / `research_settings` (tools, deep research)
+  and `langfuse_settings` in `app/core/config.py`; `db_settings` (`DatabaseSettings`) in
+  `app/db/config.py` — so Alembic needs only `DATABASE_URL`. The chat settings all have defaults
+  and a blank value (`KEY=`) means unset: a missing provider key hides its models, a missing search
+  key drops the web tools, missing Langfuse keys make tracing a no-op; only inconsistent
+  configuration (a default model outside `LLM_MODELS`, `openai:claude-*`) refuses to start. Every env
   var is a field on one of them; `os.environ` and `BaseSettings` outside `config.py` are banned
   imports. `ENVIRONMENT` is a `Literal` (a typo refuses to start); `CORS_ORIGINS` rejects `"*"`.
   `.env.example` must list every field (`tests/guards/test_settings.py`). `mail_settings`
@@ -123,7 +154,9 @@ second method. (`tests/guards/test_use_cases.py`.)
   `.env` lines.
 - **Auth**: protected routes take `CurrentUserDep` (the ORM `UserModel`). Organization routes
   take `MembershipDep` (member of the path's organization, else 404) or `ManagerDep` (owner or
-  admin, else 403). Every operation not listed in `PUBLIC_OPERATIONS`
+  admin, else 403); team routes `TeamMembershipDep` / `TeamManagerDep` (creator or organization
+  manager); conversation routes `ConversationAccessDep` (team member and visibility, else 404)
+  and `RunAccessDep`. Every operation not listed in `PUBLIC_OPERATIONS`
   (`tests/guards/test_openapi.py`) must carry the bearer requirement.
 - **Models**: inherit `Base, TimestampMixin` (UUID pk, `created_at`, `updated_at`). Tables and
   columns are snake_case and singular; datetimes are `DateTime(timezone=True)` and end in `_at`;
@@ -171,6 +204,13 @@ library forces a rule off, scope it to that file with a commented header.
   `.dict()` or `class Config` fail the suite.
 - Don't write framework tests (bare "missing field → 422"). The guards are the exception: they
   pin the conventions, not the framework.
+- Chat tests: router tests drive the SSE route through `client.stream(...)` with the
+  `FakeListener` (NOTIFY never fires inside the rolled-back test transaction, so the reader's poll
+  fallback is what runs); `tests/db/test_listen.py` is the one place that commits real rows (and
+  truncates them) to prove `PgListener` and the `SKIP LOCKED` claim. The chat runtime is tested
+  with the fakes in `tests/fakes_llm.py` (a scripted chat model, search, sandbox, tracer) — never a
+  provider, never Docker (the sandbox integration test is `@pytest.mark.docker` and skipped
+  without a daemon).
 - `tests/guards/`: `test_architecture.py` (imports, layout, naming, raises), `test_use_cases.py`,
   `test_routes.py` (async endpoints and dependencies, `*Out` response models, REST naming,
   `DbDep` scope), `test_openapi.py` (bearer on non-public ops, `ErrorOut` on every documented
@@ -208,6 +248,28 @@ library forces a rule off, scope it to that file with a commented header.
   `just ci` (everything plus the full suite against Postgres) on pushes to `main` and PRs.
   `.github/workflows/frontend.yml` also runs when `tests/guards/openapi.snapshot.json` changes, so
   a snapshot without the frontend refresh fails CI (`docs/api-contract.md`).
+
+## Chat runtime conventions
+
+- Claude is reached only through `ChatAnthropic` built by `build_chat_model`
+  (`app/core/llm/models.py`); `ChatOpenAI` serves OpenAI-compatible servers only (`openai:claude-*`
+  is rejected by settings). Never import `anthropic`; `openai` only in `app/core/llm/errors.py`;
+  `langchain_anthropic` / `langchain_openai` only in `models.py`; `langfuse` only in
+  `app/core/observability.py`; `langgraph.checkpoint.postgres` only in `app/core/agent/checkpointer.py`
+  (ruff `TID251`).
+- Histories are append-only. Same-provider turns replay the stored `provider_messages` verbatim
+  (thinking blocks and signatures included); another provider rebuilds text + tool calls from
+  `parts` and drops reasoning.
+- Everything a run emits is an AI SDK UI chunk (`app/core/ui_stream.py`): the LangGraph stream
+  mapper, the tools (through `get_stream_writer()`) and the research graph all speak it; the worker
+  persists it (`run_event`) and folds it (`message.parts`). Never route chunks through `BaseSchema`.
+- Sources are numbered per run (`SourceRegistry`), cited as `[n]`, and streamed once as
+  `source-url` parts. Tools return `(content_for_model, artifact)`; a failing tool is an error
+  `ToolMessage`, never a failed run.
+- `reportUnknown*` is relaxed per file, with a header naming the library boundary, only in the
+  LangChain/LangGraph/Langfuse-facing modules (`llm/models.py`, `llm/history.py`,
+  `tools/registry.py`, `agent/graph.py`, `agent/stream.py`, `research/graph.py`,
+  `observability.py`, `tests/fakes_llm.py`); `reportExplicitAny` is never relaxed.
 
 ## Adding a domain
 
