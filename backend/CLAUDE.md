@@ -36,7 +36,7 @@ app/<domain>/
 ├── repository.py      SQL access (*Repository), returns *Model; flush(), never commit()
 ├── dependencies.py    FastAPI factories: async <verb_noun>_use_case(db: DbDep) → <VerbNoun>Dep
 ├── router.py          APIRouter; decode → use case → return the domain object (response_model=*Out serializes it once)
-└── use_cases/         one class per file: __init__(session[, cognito, mail]) + async execute(*, ...)
+└── use_cases/         one class per file: __init__(<DI seams>) + async execute(*, ...)
 ```
 
 A domain directory contains exactly these entries (guard: no `service.py`, `utils.py`, …).
