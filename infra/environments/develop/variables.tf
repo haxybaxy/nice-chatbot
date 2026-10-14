@@ -23,7 +23,7 @@ variable "tags" {
 }
 
 variable "ses_identity" {
-  description = "Verified SES identity the backend sends mail from (a domain or address already verified in aws_region)"
+  description = "Verified SES identity the backend sends mail from (a domain or address already verified in aws_region); null until one exists — password-reset mail then fails, everything else works"
   type        = string
-  default     = "example.com"
+  default     = null
 }

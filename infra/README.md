@@ -58,8 +58,10 @@ admin API:
   errors hidden.
 - **IAM managed policy** `nicechatbot-<env>-cognito-backend`: `AdminCreateUser`, `AdminSetUserPassword`,
   `AdminDeleteUser`, `AdminInitiateAuth`, `AdminUserGlobalSignOut` on that pool only, plus
-  `ses:SendEmail` on the verified SES identity named by `ses_identity` (password-reset mail). Attached to nothing yet: attach it to
-  the role that runs the backend once it is deployed. Locally the backend uses your own profile.
+  `ses:SendEmail` on the verified SES identity named by `ses_identity` (password-reset mail) when
+  one is set — `develop` ships with `ses_identity = null`, so reset mail is the one flow that needs
+  a verified identity first. Attached to nothing yet: attach it to the role that runs the backend
+  once it is deployed. Locally the backend uses your own profile.
 
 Outputs: `cognito_user_pool_id`, `cognito_app_client_id`, `cognito_issuer_url`, `cognito_jwks_url`,
 `cognito_user_pool_arn`, `cognito_backend_policy_arn` and `backend_env`.

@@ -13,7 +13,7 @@ terraform {
   # account id is spelled out: replace the placeholder 123456789012 with yours (bootstrap.sh prints
   # the exact block). Locking is the S3-native lockfile (no DynamoDB).
   backend "s3" {
-    bucket       = "nicechatbot-tfstate-123456789012"
+    bucket       = "nicechatbot-tfstate-899865356413"
     key          = "develop/terraform.tfstate"
     region       = "us-west-1"
     encrypt      = true
