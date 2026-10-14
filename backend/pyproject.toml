@@ -263,9 +263,17 @@ ignore_names = [
     "__cause__",
     "metadata",
     "updated_at",
+    # set by the chat use cases, read only through RunOut
+    "finished_at",
     # fields read only through serialization (dataclasses / pydantic models outside schemas.py)
     "expires_in",
     "service",
+    # ModelSpec (app/core/llm/catalog.py) fields read through ModelOut
+    "is_default",
+    "display_name",
+    "tier",
+    "supports_tools",
+    "supports_reasoning",
     # called from outside app/ (alembic env, tests)
     "register_all_models",
     "lifespan",

@@ -16,7 +16,8 @@ exercised — every route ships with an HTTP test.
 """
 
 import os
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import ClassVar
 
@@ -85,12 +86,13 @@ from app.core.cognito import get_cognito_client
 from app.core.mail import get_mail_client
 from app.core.security import get_current_user
 from app.db.base import Base
+from app.db.listen import get_listener_dep
 from app.db.registry import register_all_models
+from app.db.session import SessionScope, get_db, get_session_scope
 from app.db.session import engine as app_engine
-from app.db.session import get_db
 from app.main import app
 from app.users.models import UserModel
-from tests.fakes import FakeCognitoClient, FakeMailClient
+from tests.fakes import FakeCognitoClient, FakeListener, FakeMailClient
 from tests.routing import iter_api_routes
 
 register_all_models()
@@ -184,10 +186,40 @@ def mail() -> FakeMailClient:
 
 
 @pytest.fixture
+def fake_listener() -> FakeListener:
+    return FakeListener()
+
+
+@pytest.fixture
+def sessions(db_session: AsyncSession) -> SessionScope:
+    """A ``SessionScope`` bound to the test transaction, for the worker-side use cases and the SSE
+    reader: each scope is a SAVEPOINT on ``db_session`` — released on success, rolled back on
+    error — so their commits stay inside the rolled-back test transaction."""
+
+    @asynccontextmanager
+    async def _scope() -> AsyncGenerator[AsyncSession]:
+        nested = await db_session.begin_nested()
+        try:
+            yield db_session
+        except Exception:
+            await nested.rollback()
+            raise
+        else:
+            await nested.commit()
+
+    return _scope
+
+
+@pytest.fixture
 async def client(
-    db_session: AsyncSession, cognito: FakeCognitoClient, mail: FakeMailClient
+    db_session: AsyncSession,
+    cognito: FakeCognitoClient,
+    mail: FakeMailClient,
+    fake_listener: FakeListener,
+    sessions: SessionScope,
 ) -> AsyncIterator[AsyncClient]:
-    """HTTP client with the database session and the AWS clients (Cognito, mail) swapped for test doubles."""
+    """HTTP client with the database session, the AWS clients (Cognito, mail) and the Postgres
+    listener swapped for test doubles."""
 
     async def _get_db() -> AsyncIterator[AsyncSession]:
         # Same contract as app.db.session.get_db (commit on success, roll back on error), on the
@@ -207,8 +239,10 @@ async def client(
             await db_session.commit()
 
     app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_session_scope] = lambda: sessions
     app.dependency_overrides[get_cognito_client] = lambda: cognito
     app.dependency_overrides[get_mail_client] = lambda: mail
+    app.dependency_overrides[get_listener_dep] = lambda: fake_listener
     async with AsyncClient(transport=ASGITransport(app=_recording_app), base_url="http://test") as http:
         yield http
     app.dependency_overrides.clear()

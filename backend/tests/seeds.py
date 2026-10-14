@@ -1,11 +1,23 @@
 """Seed helpers: async, take the session first, flush, return the model."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import PasswordResetTokenModel
+from app.chat.models import (
+    ConversationModel,
+    ConversationVisibility,
+    MessageModel,
+    MessageRole,
+    RunEventModel,
+    RunMode,
+    RunModel,
+    RunStatus,
+)
+from app.core.ui_stream import JsonObject, UIChunk
 from app.organizations.models import OrganizationMemberModel, OrganizationModel, OrganizationRole
 from app.teams.models import TeamMemberModel, TeamModel
 from app.users.models import UserModel
@@ -70,3 +82,97 @@ async def seed_team_member(db: AsyncSession, team: TeamModel, user: UserModel) -
     db.add(member)
     await db.flush()
     return member
+
+
+async def seed_conversation(
+    db: AsyncSession,
+    *,
+    team: TeamModel,
+    creator: UserModel,
+    title: str | None = None,
+    visibility: ConversationVisibility = ConversationVisibility.TEAM,
+    last_message_at: datetime | None = None,
+) -> ConversationModel:
+    conversation = ConversationModel(team_id=team.id, created_by=creator.id, title=title, visibility=visibility.value)
+    if last_message_at is not None:
+        conversation.last_message_at = last_message_at
+    db.add(conversation)
+    await db.flush()
+    await db.refresh(conversation)
+    return conversation
+
+
+async def seed_message(
+    db: AsyncSession,
+    *,
+    conversation: ConversationModel,
+    role: MessageRole,
+    position: int,
+    parts: list[JsonObject] | None = None,
+    run: RunModel | None = None,
+    created_by: UserModel | None = None,
+) -> MessageModel:
+    message = MessageModel(
+        conversation_id=conversation.id,
+        run_id=run.id if run is not None else None,
+        created_by=created_by.id if created_by is not None else None,
+        role=role.value,
+        position=position,
+        parts=parts if parts is not None else [{"type": "text", "text": f"message {position}"}],
+    )
+    db.add(message)
+    await db.flush()
+    await db.refresh(message)
+    return message
+
+
+async def seed_run(
+    db: AsyncSession,
+    *,
+    conversation: ConversationModel,
+    requested_by: UserModel | None,
+    status: RunStatus = RunStatus.QUEUED,
+    mode: RunMode = RunMode.CHAT,
+    model: str = "anthropic:claude-opus-5-5",
+    attempt: int = 1,
+    worker_id: str | None = None,
+    heartbeat_at: datetime | None = None,
+    created_at: datetime | None = None,
+) -> RunModel:
+    """A run in ``status``; ``created_at`` orders the queue, ``heartbeat_at`` ages a running run."""
+    run = RunModel(
+        conversation_id=conversation.id,
+        requested_by=requested_by.id if requested_by is not None else None,
+        status=status.value,
+        mode=mode.value,
+        model=model,
+        provider=model.split(":", 1)[0],
+        effort="medium",
+        options={"web_search": True, "code": False},
+        attempt=attempt,
+        worker_id=worker_id,
+        heartbeat_at=heartbeat_at,
+        started_at=heartbeat_at,
+    )
+    if created_at is not None:
+        run.created_at = created_at
+    db.add(run)
+    await db.flush()
+    await db.refresh(run)
+    # The conversation may already be loaded in this session: keep its view of the active run current.
+    await db.refresh(conversation, ["active_run"])
+    return run
+
+
+async def seed_run_events(db: AsyncSession, run: RunModel, chunks: Sequence[UIChunk]) -> list[RunEventModel]:
+    """Append ``chunks`` to the run's log after its current ``last_seq`` (which is advanced)."""
+    first_seq = run.last_seq + 1
+    events = [
+        RunEventModel(run_id=run.id, seq=first_seq + offset, type=chunk["type"], payload=dict(chunk))
+        for offset, chunk in enumerate(chunks)
+    ]
+    db.add_all(events)
+    run.last_seq = first_seq + len(chunks) - 1
+    await db.flush()
+    await db.refresh(run)
+    return events

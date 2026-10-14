@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logging_config import configure_logging, get_logger
 from app.core.middleware import RequestLoggingMiddleware
+from app.core.openapi import json_error_envelopes
 from app.core.sse import UI_MESSAGE_STREAM_HEADER
 from app.db.listen import get_listener
 from app.db.session import async_session_maker, engine
@@ -57,6 +58,12 @@ def create_app() -> FastAPI:
     application.add_middleware(RequestLoggingMiddleware)
     application.include_router(api_router, prefix="/api")
     register_exception_handlers(application)
+    generate_openapi = application.openapi
+
+    def openapi() -> dict[str, object]:
+        return json_error_envelopes(generate_openapi())
+
+    application.openapi = openapi
     return application
 
 

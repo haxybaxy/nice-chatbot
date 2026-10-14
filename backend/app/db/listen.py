@@ -150,7 +150,7 @@ class PgListener:
                 self._dispatch(notify.channel, notify.payload)
 
 
-def _conninfo() -> str:
+def listener_conninfo() -> str:
     """The application database URL as a libpq connection string (no SQLAlchemy driver prefix)."""
     return make_url(db_settings.database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
@@ -158,7 +158,7 @@ def _conninfo() -> str:
 @cache
 def get_listener() -> PgListener:
     """The process-wide listener; built on first use so importing the module opens nothing."""
-    return PgListener(_conninfo())
+    return PgListener(listener_conninfo())
 
 
 async def get_listener_dep() -> Listener:

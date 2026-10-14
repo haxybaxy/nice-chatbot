@@ -3,15 +3,22 @@
 ``FakeCognitoClient`` satisfies ``app.core.cognito.CognitoClient`` structurally and raises the
 same ``AppError``s the boto3 implementation would, so use cases and routers are exercised end to
 end without AWS. Tokens are ``access-<sub>`` / ``refresh-<sub>`` so tests can assert on them.
-``FakeMailClient`` records every ``Mail`` instead of sending it.
+``FakeMailClient`` records every ``Mail`` instead of sending it. ``FakeListener`` replaces the
+Postgres ``LISTEN``/``NOTIFY`` connection: NOTIFY is invisible inside the rolled-back test
+transaction, so tests call ``notify`` themselves after writing rows.
 """
 
+import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Literal
 from uuid import uuid4
 
 from app.core.cognito import CognitoTokens
 from app.core.exceptions import AppError
 from app.core.mail import Mail
+from app.db.listen import ANY_KEY, wait_for_event
 
 
 @dataclass
@@ -86,3 +93,48 @@ class FakeMailClient:
 
     async def send(self, mail: Mail) -> None:
         self.sent.append(mail)
+
+
+class _ObservedEvent(asyncio.Event):
+    """An event that flags ``waiting`` when a subscriber blocks on it — the moment a test may
+    write rows and notify without racing the subscriber's own database reads."""
+
+    def __init__(self, waiting: asyncio.Event) -> None:
+        super().__init__()
+        self._waiting = waiting
+
+    async def wait(self) -> Literal[True]:
+        self._waiting.set()
+        return await super().wait()
+
+
+@dataclass
+class FakeListener:
+    """In-memory ``app.db.listen.Listener``: same waiter keys, no connection."""
+
+    subscriptions: dict[tuple[str, str], set[asyncio.Event]] = field(default_factory=dict)
+    # Set whenever a subscriber starts waiting; clear it to observe the next wait.
+    waiting: asyncio.Event = field(default_factory=asyncio.Event)
+    notified: list[tuple[str, str]] = field(default_factory=list)
+
+    @asynccontextmanager
+    async def subscribe(self, channel: str, key: str = ANY_KEY) -> AsyncGenerator[asyncio.Event]:
+        event = _ObservedEvent(self.waiting)
+        waiters = self.subscriptions.setdefault((channel, key), set())
+        waiters.add(event)
+        try:
+            yield event
+        finally:
+            waiters.discard(event)
+
+    async def wait(self, channel: str, key: str = ANY_KEY, *, timeout_s: float) -> bool:
+        async with self.subscribe(channel, key) as event:
+            return await wait_for_event(event, timeout_s)
+
+    def notify(self, channel: str, payload: str) -> None:
+        """What ``pg_notify(channel, payload)`` would do once the writer committed."""
+        self.notified.append((channel, payload))
+        key = payload.split(":", 1)[0]
+        for waiter_key in ((channel, key), (channel, ANY_KEY)):
+            for event in self.subscriptions.get(waiter_key, ()):
+                event.set()

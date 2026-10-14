@@ -73,10 +73,11 @@ class TestListMyTeams:
 
         assert response.status_code == 200, response.text
         body = response.json()
-        assert [row["name"] for row in body] == ["Research", "Also mine"]
-        assert body[0]["id"] == str(team.id)
-        assert body[0]["organization"] == {"id": str(organization.id), "name": "Nice Chatbot"}
-        assert body[0]["createdBy"] == str(creator.id)
+        # Both teams were created in one transaction (same created_at), so compare as a set.
+        assert {row["name"] for row in body} == {"Research", "Also mine"}
+        research = next(row for row in body if row["id"] == str(team.id))
+        assert research["organization"] == {"id": str(organization.id), "name": "Nice Chatbot"}
+        assert research["createdBy"] == str(creator.id)
 
     async def test_requires_auth(self, client: AsyncClient) -> None:
         assert (await client.get("/api/teams")).status_code == 401
