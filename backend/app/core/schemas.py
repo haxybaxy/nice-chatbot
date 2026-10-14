@@ -11,8 +11,9 @@ Datetime fields on the boundary are typed :data:`UtcDatetime`, never bare ``date
 serializes to UTC ISO-8601 with a ``Z`` suffix *and* keeps the field's JSON Schema type intact.
 """
 
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, cast
 
 from pydantic import (
     AfterValidator,
@@ -55,6 +56,30 @@ NormalizedEmail = Annotated[EmailStr, AfterValidator(_normalize_email)]
 # Opt-out of BaseSchema's global strip for values that must round-trip byte-for-byte
 # (credentials): a password with surrounding whitespace is still that password.
 VerbatimStr = Annotated[str, StringConstraints(strip_whitespace=False)]
+
+
+def type_tag(families: Mapping[str, str] | None = None) -> Callable[[object], str | None]:
+    """A callable ``pydantic.Discriminator`` for unions keyed on a ``type`` field.
+
+    Reads ``type`` from a dict (JSON input) or an attribute (a model instance, on serialization)
+    and returns it as the tag — except that a value starting with one of ``families``' prefixes
+    collapses to that family's tag (``"tool-web_search"`` → ``"tool"``), so one schema covers an
+    open-ended family of ``type`` values.
+    """
+    prefixes = tuple((families or {}).items())
+
+    def tag(value: object) -> str | None:
+        type_value = (
+            cast("dict[str, object]", value).get("type") if isinstance(value, dict) else getattr(value, "type", None)
+        )
+        if not isinstance(type_value, str):
+            return None
+        for prefix, family in prefixes:
+            if type_value.startswith(prefix):
+                return family
+        return type_value
+
+    return tag
 
 
 class BaseSchema(BaseModel):

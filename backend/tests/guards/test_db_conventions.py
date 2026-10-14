@@ -1,12 +1,15 @@
 """Schema conventions, checked on ``Base.metadata`` (no database): snake_case names, the
 timestamp mixin everywhere, tz-aware ``*_at`` datetimes, ``*_id`` foreign keys, explicit
 relationship loading (implicit lazy loads raise under the async session), the naming
-convention, and the role CHECK in step with the enum."""
+convention, and every enum-backed CHECK in step with its ``StrEnum``."""
 
 import re
+from enum import StrEnum
 
+import pytest
 from sqlalchemy import CheckConstraint, Date, DateTime
 
+from app.chat.models import ConversationVisibility, MessageRole, RunMode, RunStatus
 from app.db.base import NAMING_CONVENTION, Base
 from app.db.registry import register_all_models
 from app.organizations.models import OrganizationRole
@@ -78,12 +81,22 @@ def test_naming_convention_is_complete() -> None:
     assert set(NAMING_CONVENTION) == {"ix", "uq", "ck", "fk", "pk"}
 
 
-def test_role_check_matches_the_enum() -> None:
-    table = Base.metadata.tables["organization_member"]
-    # Declared as name="role"; the naming convention renders it <table>_<name>_check.
-    checks = [
-        c for c in table.constraints if isinstance(c, CheckConstraint) and c.name == "organization_member_role_check"
-    ]
-    assert len(checks) == 1
+# Every string column that stands in for an enum: (table, CHECK name as declared, the StrEnum).
+# The naming convention renders the constraint as <table>_<name>_check.
+ENUM_CHECKS: list[tuple[str, str, type[StrEnum]]] = [
+    ("organization_member", "role", OrganizationRole),
+    ("conversation", "visibility", ConversationVisibility),
+    ("message", "role", MessageRole),
+    ("run", "status", RunStatus),
+    ("run", "mode", RunMode),
+]
+
+
+@pytest.mark.parametrize(("table_name", "column", "enum"), ENUM_CHECKS, ids=[f"{t}.{c}" for t, c, _ in ENUM_CHECKS])
+def test_enum_checks_match_their_enums(table_name: str, column: str, enum: type[StrEnum]) -> None:
+    table = Base.metadata.tables[table_name]
+    expected_name = f"{table_name}_{column}_check"
+    checks = [c for c in table.constraints if isinstance(c, CheckConstraint) and c.name == expected_name]
+    assert len(checks) == 1, f"{table_name}: declare CheckConstraint(..., name={column!r})"
     literals = set(QUOTED.findall(str(checks[0].sqltext)))
-    assert literals == {role.value for role in OrganizationRole}
+    assert literals == {member.value for member in enum}

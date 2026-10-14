@@ -12,14 +12,7 @@ class _Pending:
 
 _ = _Pending()
 
-# app/db/session.py
-_.session_scope
-_.get_session_scope
-_.SessionScopeDep
-
 # app/core/config.py
-_.chat_settings
-_.worker_settings
 _.agent_settings
 _.search_settings
 _.sandbox_settings
@@ -44,19 +37,11 @@ _.wait
 _.BufferedEventSink
 _.data_chunk
 _.source_url_chunk
-_.fold_parts
 
 # app/core/llm/catalog.py
-_.available
 _.is_available
-_.default
 _.title_model
 _.cheaper
-_.is_default
-_.display_name
-_.tier
-_.supports_tools
-_.supports_reasoning
 _.input_usd_per_mtok
 _.output_usd_per_mtok
 _.cache_read_multiplier
@@ -70,9 +55,7 @@ agent_max_tool_calls_per_step
 anthropic_base_url
 chat_history_max_messages
 chat_run_timeout_s
-chat_sse_ping_interval_s
 chat_title_timeout_s
-llm_default_effort
 llm_max_retries
 llm_max_tokens
 llm_openai_max_tokens_param
@@ -95,4 +78,16 @@ worker_heartbeat_interval_s
 worker_poll_interval_s
 worker_reaper_interval_s
 worker_shutdown_grace_s
-worker_stale_after_s
+
+# ── Consumed only by app/worker.py (Phase 1.4 / 2), which lands after the chat domain ──────────
+# app/chat/use_cases: the worker-side queue operations
+_.ClaimRun
+_.TouchRun
+_.RecordRunEvents
+_.SaveAssistantMessage
+_.FinishRun
+_.ReapStaleRuns
+_.owned
+_.cancel_requested
+# app/db/listen.py: the worker's startup log (PgListener.wait shares its name with CancelToken.wait above)
+_.listening
