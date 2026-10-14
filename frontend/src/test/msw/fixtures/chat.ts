@@ -21,6 +21,7 @@ function makeModel(overrides: Partial<ChatModel> = {}): ChatModel {
     displayName: "Claude Opus 5.5",
     tier: "frontier",
     supportsTools: true,
+    supportsVision: true,
     supportsReasoning: true,
     isDefault: false,
     ...overrides,

@@ -78,6 +78,10 @@ function toUiPart(part: WirePart): ChatMessagePart[] {
           ...(part.title ? { title: part.title } : {}),
         },
       ];
+    case "file":
+      // An attachment the user sent: the SDK's file part (the bearer-protected `url` is fetched
+      // by the attachment components, never used as a raw `src`).
+      return [{ type: "file", mediaType: part.mediaType, filename: part.filename, url: part.url }];
   }
 }
 
