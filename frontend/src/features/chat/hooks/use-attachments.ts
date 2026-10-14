@@ -75,7 +75,7 @@ function installRevokeOnRemove(queryClient: QueryClient): void {
 }
 
 /** The object-URL query of one attachment (shared by the hook and the download mutation). */
-export function attachmentObjectUrlOptions(queryClient: QueryClient, attachmentId: string) {
+function attachmentObjectUrlOptions(queryClient: QueryClient, attachmentId: string) {
   const queryKey = QUERY_KEYS.chat.attachment(attachmentId);
   return queryOptions({
     queryKey,

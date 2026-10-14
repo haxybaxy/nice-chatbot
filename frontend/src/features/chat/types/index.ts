@@ -41,8 +41,6 @@ export type MessagePartRequest = CreateMessageRequest["parts"][number];
 /** An uploaded file (`AttachmentOut`): what `POST /api/teams/{team_id}/attachments` returns. */
 export type Attachment = Schema<"AttachmentOut">;
 
-export type AttachmentKind = Schema<"AttachmentKind">;
-
 /** The run settings a message is sent with: what the composer decides (`CreateMessageIn` minus `parts`). */
 export type RunRequestOptions = Pick<CreateMessageRequest, "model" | "mode" | "tools">;
 

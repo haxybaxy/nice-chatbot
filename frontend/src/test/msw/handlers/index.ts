@@ -1,3 +1,4 @@
+import { attachmentHandlers } from "./attachments";
 import { authHandlers } from "./auth";
 import { chatHandlers } from "./chat";
 import { teamsHandlers } from "./teams";
@@ -8,4 +9,5 @@ export const defaultHandlers = [
   ...usersHandlers,
   ...teamsHandlers,
   ...chatHandlers,
+  ...attachmentHandlers,
 ];

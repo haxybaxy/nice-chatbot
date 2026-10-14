@@ -131,6 +131,74 @@ function installObserver(name: "ResizeObserver" | "IntersectionObserver"): void 
 installObserver("ResizeObserver");
 installObserver("IntersectionObserver");
 
+// jsdom's `URL` has no object-URL support, and the `createObjectURL` Node leaves on the global
+// only knows Node blobs (which `fetch` could not read under MSW anyway). Deterministic stubs
+// instead: `blob:mock/<n>` per call, so a test can assert on the URL an `<img>` got and on its
+// revocation (`vi.mocked(URL.createObjectURL)`). `mockReset` clears the calls between tests.
+let objectUrlCount = 0;
+function installObjectUrls(target: typeof URL): void {
+  Object.defineProperty(target, "createObjectURL", {
+    value: vi.fn((_blob: Blob) => `blob:mock/${++objectUrlCount}`),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(target, "revokeObjectURL", {
+    value: vi.fn((_url: string) => {}),
+    configurable: true,
+    writable: true,
+  });
+}
+
+installObjectUrls(URL);
+if (window.URL !== URL) {
+  installObjectUrls(window.URL);
+}
+
+// Binary bodies cross MSW on Node's fetch stack (undici), which only understands its own
+// `Blob` / `File` / `FormData`: a jsdom `File` inside a `FormData` serializes as
+// `filename="blob"` with the body `undefined`, a jsdom `Blob` has no `stream()` for a
+// `responseType: "blob"` answer to be re-wrapped, and a parsed multipart `File` is not an
+// `instanceof` jsdom's class. So the globals are Node's trio instead: a test builds
+// `new File(...)`, the client appends it to `new FormData()`, a handler reads it back with
+// `request.formData()`, all on one implementation. `src/` has no Node types, and jsdom has
+// already shadowed the globals when this file runs, so the classes are taken from what Node's
+// `Response` (not a jsdom global) hands back. The one jsdom-only ability kept is
+// `new FormData(formElement)`, which the vendored `PromptInput` uses to read its textarea:
+// `TestFormData` delegates that constructor form to jsdom's class.
+const JsdomFormData = globalThis.FormData;
+const NodeFormData = (await new Response(new URLSearchParams("probe=1")).formData())
+  .constructor as typeof FormData;
+const NodeBlob = (await new Response("probe").blob()).constructor as typeof Blob;
+const probeForm = new NodeFormData();
+probeForm.append("probe", new NodeBlob(["probe"]), "probe.txt");
+const probeFile = (await new Response(probeForm).formData()).get("probe");
+if (typeof probeFile === "string" || probeFile === null) {
+  throw new Error("test setup: could not obtain Node's File class");
+}
+const NodeFile = probeFile.constructor as typeof File;
+
+class TestFormData extends NodeFormData {
+  constructor(form?: HTMLFormElement) {
+    super();
+    if (form) {
+      for (const [name, value] of new JsdomFormData(form)) {
+        this.append(name, value);
+      }
+    }
+  }
+}
+
+function installNodeFileApi(): void {
+  const replacements = { Blob: NodeBlob, File: NodeFile, FormData: TestFormData };
+  for (const [name, value] of Object.entries(replacements)) {
+    for (const target of [globalThis, window]) {
+      Object.defineProperty(target, name, { value, configurable: true, writable: true });
+    }
+  }
+}
+
+installNodeFileApi();
+
 beforeAll(() => {
   // Every endpoint a test hits needs a handler in src/test/msw/ — an unhandled request fails
   // the test instead of silently resolving to nothing.

@@ -1,5 +1,13 @@
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ATTACHMENT_MAX_BYTES,
@@ -99,4 +107,66 @@ export function useComposerAttachments(onReject: (message: string) => void) {
   );
 
   return { files, add, remove, clear };
+}
+
+type Attachments = ReturnType<typeof useComposerAttachments>;
+
+function hasFiles(transfer: DataTransfer | null): boolean {
+  return transfer !== null && Array.from(transfer.types).includes("Files");
+}
+
+function pastedFiles(transfer: DataTransfer | null): File[] {
+  const files: File[] = [];
+  for (const item of transfer?.items ?? []) {
+    const file = item.kind === "file" ? item.getAsFile() : null;
+    if (file) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
+/**
+ * The composer's three other ways in — a drop on the form, a paste into the textarea — and
+ * Backspace in an empty textarea removing the last file. The drop handlers run in the capture
+ * phase and stop propagation: the vendored `PromptInput` listens for `drop` on the same form
+ * and would otherwise add the files to its own list. `locked` (an upload in flight) freezes
+ * the list.
+ */
+export function useComposerFileEvents(attachments: Attachments, locked: boolean) {
+  const { add, remove, files } = attachments;
+  return {
+    onDragOverCapture: (event: DragEvent<HTMLFormElement>) => {
+      if (hasFiles(event.dataTransfer)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onDropCapture: (event: DragEvent<HTMLFormElement>) => {
+      if (!hasFiles(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (!locked) {
+        add(event.dataTransfer.files);
+      }
+    },
+    onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const pasted = pastedFiles(event.clipboardData);
+      if (pasted.length > 0) {
+        event.preventDefault();
+        if (!locked) {
+          add(pasted);
+        }
+      }
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      const last = files.at(-1);
+      if (event.key === "Backspace" && event.currentTarget.value === "" && last && !locked) {
+        event.preventDefault();
+        remove(last.id);
+      }
+    },
+  };
 }

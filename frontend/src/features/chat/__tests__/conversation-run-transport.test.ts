@@ -118,6 +118,50 @@ describe("ConversationRunTransport", () => {
     });
   });
 
+  it("sends a file part as the id of its upload, text optional; refuses a file that is not one", async () => {
+    const bodies: CreateMessageRequest[] = [];
+    server.use(
+      mockApi.post(API_ENDPOINTS.CHAT.MESSAGES, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(makeRun({ conversationId: CONVERSATION_ID }), { status: 201 });
+      })
+    );
+    const { transport } = makeTransport();
+
+    await collect(
+      await transport.sendMessages(
+        sendOptions([
+          {
+            id: "u-2",
+            role: "user",
+            parts: [
+              {
+                type: "file",
+                mediaType: "application/pdf",
+                filename: "report.pdf",
+                url: "/api/attachments/att-9/content",
+              },
+            ],
+          },
+        ])
+      )
+    );
+    expect(bodies[0]?.parts).toEqual([{ type: "file", attachmentId: "att-9" }]);
+
+    await expect(
+      transport.sendMessages(
+        sendOptions([
+          {
+            id: "u-3",
+            role: "user",
+            parts: [{ type: "file", mediaType: "image/png", url: "blob:x" }],
+          },
+        ])
+      )
+    ).rejects.toThrow(/not an uploaded attachment/);
+    expect(bodies).toHaveLength(1);
+  });
+
   it("refuses to regenerate and refuses a thread that does not end with a user message", async () => {
     const { transport } = makeTransport();
 

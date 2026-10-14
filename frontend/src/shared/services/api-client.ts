@@ -114,14 +114,23 @@ function onTokenRefreshFailed() {
   refreshSubscribers = [];
 }
 
+/** A `responseType: "blob"` request gets its error envelope as a Blob too: read it back as JSON. */
+async function readBlobJson(blob: Blob): Promise<unknown> {
+  try {
+    return JSON.parse(await blob.text());
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Translate a non-401 axios failure into an `ApiError` (or a plain `Error` for network
  * failures). The envelope → message mapping is `apiErrorFromResponse` (./api-error).
  */
-function toApiError(error: AxiosError): Error {
+async function toApiError(error: AxiosError): Promise<Error> {
   if (error.response) {
     const { status, data } = error.response;
-    return apiErrorFromResponse(status, data);
+    return apiErrorFromResponse(status, data instanceof Blob ? await readBlobJson(data) : data);
   }
 
   if (error.code === "ECONNABORTED") {
@@ -226,7 +235,7 @@ function createAxiosInstance(baseUrl: string, timeout: number): AxiosInstance {
         throw new ApiError(401, SESSION_ENDED_MESSAGE);
       }
 
-      throw toApiError(error);
+      throw await toApiError(error);
     }
   );
 
