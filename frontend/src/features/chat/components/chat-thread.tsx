@@ -60,8 +60,13 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
         )}
         <div className="mx-auto w-full max-w-3xl">
           <ChatComposer
+            teamId={teamId}
             status={chat.status}
-            onSubmit={chat.send}
+            // Not awaited: `send` resolves when the response has finished streaming, and the
+            // composer must clear as soon as the optimistic message is in the thread.
+            onSubmit={(message) => {
+              void chat.send(message);
+            }}
             onStop={() => void chat.stop()}
             settings={settings}
             onSettingsChange={updateSettings}

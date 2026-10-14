@@ -29,7 +29,6 @@ export const QUERY_KEYS = {
      */
     attachment: (attachmentId: string) => ["chat", "attachment", attachmentId] as const,
     /** One attachment's metadata (`GET /api/attachments/{id}`). */
-    attachmentMeta: (attachmentId: string) =>
-      ["chat", "attachment", attachmentId, "meta"] as const,
+    attachmentMeta: (attachmentId: string) => ["chat", "attachment", attachmentId, "meta"] as const,
   },
 } as const;

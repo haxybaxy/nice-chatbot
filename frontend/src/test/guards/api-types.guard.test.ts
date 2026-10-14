@@ -78,21 +78,21 @@ describe("generated API type helpers", () => {
   });
 
   it("separates the multipart operation from the JSON ones", () => {
-    const UPLOAD = "/api/teams/{team_id}/attachments";
-    expectTypeOf<FormPaths<"post">>().toEqualTypeOf<typeof UPLOAD>();
+    type Upload = "/api/teams/{team_id}/attachments";
+    expectTypeOf<FormPaths<"post">>().toEqualTypeOf<Upload>();
     expectTypeOf<FormPaths<"get">>().toEqualTypeOf<never>();
-    expectTypeOf<FormBody<typeof UPLOAD, "post">>().toEqualTypeOf<
+    expectTypeOf<FormBody<Upload, "post">>().toEqualTypeOf<
       Schema<"Body_upload_attachment_api_teams__team_id__attachments_post">
     >();
     expectTypeOf<FormBody<"/api/auth/signup", "post">>().toEqualTypeOf<never>();
     // The upload has no JSON body, yet it is neither a JSON path nor a bodyless one: only
     // `apiClient.upload` accepts it.
-    expectTypeOf<RequestBody<typeof UPLOAD, "post">>().toEqualTypeOf<never>();
-    expectTypeOf<Extract<JsonPaths<"post">, typeof UPLOAD>>().toEqualTypeOf<never>();
-    expectTypeOf<Extract<BodylessPaths<"post">, typeof UPLOAD>>().toEqualTypeOf<never>();
-    expectTypeOf<SuccessBody<typeof UPLOAD, "post">>().toEqualTypeOf<Schema<"AttachmentOut">>();
-    expectTypeOf<
-      QueryParams<"/api/attachments/{attachment_id}/content", "get">
-    >().toEqualTypeOf<{ download?: boolean }>();
+    expectTypeOf<RequestBody<Upload, "post">>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<JsonPaths<"post">, Upload>>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<BodylessPaths<"post">, Upload>>().toEqualTypeOf<never>();
+    expectTypeOf<SuccessBody<Upload, "post">>().toEqualTypeOf<Schema<"AttachmentOut">>();
+    expectTypeOf<QueryParams<"/api/attachments/{attachment_id}/content", "get">>().toEqualTypeOf<{
+      download?: boolean;
+    }>();
   });
 });

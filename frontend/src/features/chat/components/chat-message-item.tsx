@@ -1,9 +1,10 @@
-import { isTextUIPart } from "ai";
+import { isFileUIPart, isTextUIPart } from "ai";
 
 import { Message, MessageContent } from "@/shared/components/ai-elements/message";
 
 import { AssistantMessage } from "./assistant-message";
 import type { ChatMessage } from "../types";
+import { FilePart } from "./parts/file-part";
 
 interface ChatMessageItemProps {
   message: ChatMessage;
@@ -11,7 +12,7 @@ interface ChatMessageItemProps {
   isStreaming: boolean;
 }
 
-/** One row of the thread: the user's text on the right, the assistant's parts on the left. */
+/** One row of the thread: the user's files and text on the right, the assistant's parts on the left. */
 export function ChatMessageItem({ message, isStreaming }: ChatMessageItemProps) {
   return (
     <Message
@@ -23,14 +24,30 @@ export function ChatMessageItem({ message, isStreaming }: ChatMessageItemProps) 
         {message.role === "assistant" ? (
           <AssistantMessage message={message} isStreaming={isStreaming} />
         ) : (
-          <p className="whitespace-pre-wrap">
-            {message.parts
-              .filter(isTextUIPart)
-              .map((part) => part.text)
-              .join("")}
-          </p>
+          <UserMessage message={message} />
         )}
       </MessageContent>
     </Message>
+  );
+}
+
+/** Attachments first (the order the SDK and the backend keep them in), then the text. */
+function UserMessage({ message }: { message: ChatMessage }) {
+  const files = message.parts.filter(isFileUIPart);
+  const text = message.parts
+    .filter(isTextUIPart)
+    .map((part) => part.text)
+    .join("");
+  return (
+    <>
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2" data-testid="message-files">
+          {files.map((part, index) => (
+            <FilePart key={`${part.url}#${index}`} part={part} />
+          ))}
+        </div>
+      )}
+      {text && <p className="whitespace-pre-wrap">{text}</p>}
+    </>
   );
 }
