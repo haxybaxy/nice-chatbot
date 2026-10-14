@@ -8,6 +8,7 @@ from typing import get_args, get_origin
 
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute, RouteContext
+from starlette.responses import StreamingResponse
 
 from app.core.schemas import BaseSchemaOut
 from app.db.session import get_db
@@ -57,11 +58,23 @@ def test_every_dependency_is_async(routes: Routes) -> None:
     assert found == []
 
 
+def _is_event_stream(route: APIRoute) -> bool:
+    """SSE operations stream bytes; their event vocabulary is ``app/core/ui_stream.py``."""
+    response_class: object = route.response_class
+    return (
+        isinstance(response_class, type)
+        and issubclass(response_class, StreamingResponse)
+        and response_class.media_type == "text/event-stream"
+    )
+
+
 def test_response_models_are_out_schemas(routes: Routes) -> None:
-    """Every operation serializes through a ``BaseSchemaOut`` (or a list of one), except 204s."""
+    """Every operation serializes through a ``BaseSchemaOut`` (or a list of one), except 204s and SSE."""
     found: list[str] = []
     for ctx, route in routes:
         model: object = route.response_model
+        if _is_event_stream(route):
+            continue
         if route.status_code == 204:
             if model is not None:
                 found.append(f"{_label(ctx, route)}: a 204 returns None")

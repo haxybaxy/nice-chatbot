@@ -57,6 +57,25 @@ for _key, _value in {
     "LOG_FORMAT": "console",
 }.items():
     os.environ.setdefault(_key, _value)
+# Forced (not setdefault): a developer's .env must not change which models, tools or tracing the
+# suite sees. Blank values turn an optional setting off (config.py maps "" to None).
+os.environ.update(
+    {
+        "ANTHROPIC_API_KEY": "test-anthropic-key",
+        "ANTHROPIC_BASE_URL": "",
+        "OPENAI_API_KEY": "",
+        "OPENAI_BASE_URL": "",
+        "LLM_MODELS": '["anthropic:claude-opus-5-5","anthropic:claude-sonnet-5-5","anthropic:claude-haiku-5-5"]',
+        "LLM_DEFAULT_MODEL": "anthropic:claude-opus-5-5",
+        "LLM_TITLE_MODEL": "anthropic:claude-haiku-5-5",
+        "TAVILY_API_KEY": "test-tavily-key",
+        "SANDBOX_BACKEND": "disabled",
+        "AGENT_CHECKPOINTER": "none",
+        "LANGFUSE_PUBLIC_KEY": "",
+        "LANGFUSE_SECRET_KEY": "",
+        "LANGFUSE_ENABLED": "false",
+    }
+)
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text

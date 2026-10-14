@@ -1,12 +1,29 @@
-"""Use-case shape: one class per file with ``__init__(session[, cognito, mail])`` and a keyword-only
-``async execute``, no other public methods. Result types are ``@dataclass``es next to the use
+"""Use-case shape: one class per file with ``__init__`` taking only the DI seams listed in
+``INIT_PARAMS`` (``session``, the adapters, ``sessions`` for work that spans transactions) and a
+keyword-only ``async execute``, no other public methods. Result types are ``@dataclass``es next to the use
 case (never schemas — ``test_architecture`` forbids the import)."""
 
 import ast
 from pathlib import Path
 
 APP = Path(__file__).resolve().parents[2] / "app"
-INIT_PARAMS = {"session", "cognito", "mail"}
+# session: the request/transaction session · sessions: a SessionScope factory for use cases that
+# outlive one transaction (worker loop, SSE tail) · the rest are the adapters in app/core and
+# app/db (Cognito, mail, chat-model factory, tool registry, tracer, checkpointer, listener,
+# search, sandbox).
+INIT_PARAMS = {
+    "session",
+    "sessions",
+    "cognito",
+    "mail",
+    "llm",
+    "tools",
+    "tracer",
+    "checkpointer",
+    "listener",
+    "search",
+    "sandbox",
+}
 
 
 def _is_dataclass(node: ast.ClassDef) -> bool:
@@ -22,11 +39,11 @@ def _check_use_case(rel: str, cls: ast.ClassDef) -> list[str]:
     methods = {node.name: node for node in cls.body if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)}
     init = methods.get("__init__")
     if init is None:
-        problems.append(f"{rel}: {cls.name} needs __init__(session[, cognito, mail]) — the constructor is the DI seam")
+        problems.append(f"{rel}: {cls.name} needs __init__(session, ...) — the constructor is the DI seam")
     else:
         extra = {arg.arg for arg in init.args.args[1:]} - INIT_PARAMS
         if extra or init.args.kwonlyargs or init.args.vararg or init.args.kwarg:
-            problems.append(f"{rel}: {cls.name}.__init__ takes only session, cognito and/or mail, not {sorted(extra)}")
+            problems.append(f"{rel}: {cls.name}.__init__ takes only {sorted(INIT_PARAMS)}, not {sorted(extra)}")
     execute = methods.get("execute")
     if not isinstance(execute, ast.AsyncFunctionDef):
         problems.append(f"{rel}: {cls.name} needs `async def execute`")

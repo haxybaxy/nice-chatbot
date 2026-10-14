@@ -23,6 +23,15 @@ dependencies = [
     "boto3>=1.43.0",
     # botocore.exceptions.ClientError is imported directly.
     "botocore>=1.43.0",
+    "langgraph>=1.2,<2",
+    "langchain-core>=1.6,<2",
+    "langchain-anthropic>=1.7,<2",
+    "langchain-openai>=1.7,<2",
+    "langgraph-checkpoint-postgres>=3.1,<4",
+    "psycopg-pool>=3.2",
+    "langfuse>=5,<6",
+    "httpx>=0.28.1",
+    "openai>=3.31,<4",
 ]
 
 [build-system]
@@ -41,8 +50,6 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    # ASGITransport test client.
-    "httpx>=0.28.1",
     # RSA keypair generation for the JWT verification tests.
     "cryptography>=50.0.1",
     "deptry>=0.25.1",
@@ -54,6 +61,7 @@ dev = [
     # Deployed backends use an IAM role, so it is dev-only.
     "botocore[crt]>=1.43.0",
     "pre-commit>=4.6.2",
+    "watchfiles>=1.0",
 ]
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────
@@ -125,6 +133,12 @@ known-first-party = ["app", "tests"]
 "sqlalchemy.orm.Session".msg = "Async only: sqlalchemy.ext.asyncio.AsyncSession via DbDep"
 "sqlalchemy.orm.sessionmaker".msg = "Async only: app.db.session.async_session_maker"
 "boto3".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
+"anthropic".msg = "Never import the Anthropic SDK directly: models come from app.core.llm.models (langchain-anthropic)"
+"openai".msg = "Only app/core/llm/errors.py imports the openai SDK (exception translation); models come from app.core.llm.models"
+"langchain_anthropic".msg = "Chat models are built only in app/core/llm/models.py (build_chat_model)"
+"langchain_openai".msg = "Chat models are built only in app/core/llm/models.py (build_chat_model); Claude never goes through ChatOpenAI"
+"langfuse".msg = "Tracing is reached only through the Tracer in app/core/observability.py"
+"langgraph.checkpoint.postgres".msg = "The checkpointer lives only in app/core/agent/checkpointer.py"
 "botocore".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
 
 [tool.ruff.lint.per-file-ignores]
@@ -168,6 +182,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 addopts = "-ra --strict-markers"
+markers = ["docker: needs a Docker daemon on PATH (skipped otherwise)"]
 # Deprecated pydantic v1-style APIs (json_encoders, .dict(), class Config) and legacy SQLAlchemy
 # APIs fail the suite instead of warning.
 filterwarnings = [
@@ -198,13 +213,29 @@ exclude_also = [
 known_first_party = ["app", "tests"]
 
 [tool.deptry.per_rule_ignores]
-# Declared but never imported: uvicorn is the CLI entrypoint, psycopg is loaded via the DB URL.
-DEP002 = ["uvicorn", "psycopg"]
+# Declared but never imported: uvicorn is the CLI entrypoint, psycopg is loaded via the DB URL,
+# langgraph-checkpoint-postgres is imported through the `langgraph` namespace.
+DEP002 = [
+    "uvicorn",
+    "psycopg",
+    "langgraph-checkpoint-postgres",
+    # PENDING (Phase 1/2 seams): imported by modules that land with the chat feature. Remove each
+    # entry when its importer exists; the whole block goes before the feature is called done.
+    "langgraph",
+    "langchain-core",
+    "langchain-anthropic",
+    "langchain-openai",
+    "psycopg-pool",
+    "langfuse",
+    "httpx",
+    "openai",
+]
 
 # ── vulture ──────────────────────────────────────────────────────────────────
 
 [tool.vulture]
-paths = ["app"]
+# vulture_whitelist.py is TEMPORARY: seams whose consumers land with the chat feature.
+paths = ["app", "vulture_whitelist.py"]
 # 60 reports unused functions/classes/methods — the point of running vulture. Pydantic and ORM
 # field declarations look "unused" to it (they are read by serialization / the ORM), so the
 # schema and model modules are excluded rather than whitelisting every field; ruff still
@@ -239,4 +270,14 @@ ignore_names = [
     # called from outside app/ (alembic env, tests)
     "register_all_models",
     "lifespan",
+    # AI SDK wire keys on the UI chunk TypedDicts (app/core/ui_stream.py): read by key, never by
+    # attribute, so vulture cannot see the use.
+    "messageId",
+    "sourceId",
+    "toolCallId",
+    "toolName",
+    "inputTextDelta",
+    "input",
+    "errorText",
+    "finishReason",
 ]

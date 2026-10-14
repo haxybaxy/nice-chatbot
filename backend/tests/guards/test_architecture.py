@@ -5,7 +5,7 @@
 * Layering inside a domain: use cases and repositories never see HTTP schemas or FastAPI;
   routers never see repositories or SQLAlchemy; models never see pydantic; boundary schemas
   never see ``datetime`` (they use ``UtcDatetime``).
-* Composition roots (``app/api.py``, ``app/main.py``) are imported by nothing under ``app/``.
+* Composition roots (``app/api.py``, ``app/main.py``, ``app/worker.py``) are imported by nothing under ``app/``.
 * Transactions commit in exactly one place (``app/db/session.py``); routers never serialize.
 * Naming: ``*Model``, ``*Repository``, ``<verb_noun>_use_case`` → ``*Dep``; domain code raises
   only ``AppError``; every router has an HTTP test.
@@ -36,7 +36,7 @@ DOMAIN_ENTRIES = {
     "use_cases",
 }
 PRIVATE_MODULES = {"repository", "schemas", "router", "dependencies"}
-COMPOSITION_ROOTS = {"app.api", "app.main"}
+COMPOSITION_ROOTS = {"app.api", "app.main", "app.worker"}
 # (file under app/, imported module): the sanctioned exceptions to the cross-domain rule.
 ALLOWED_CROSS_DOMAIN = {("core/security.py", "app.users.repository")}
 # Per module kind: top-level packages and in-domain module kinds it must not import.
