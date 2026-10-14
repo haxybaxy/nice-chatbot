@@ -45,19 +45,28 @@ export function runEventsResponse(
 }
 
 export interface ControllableRunEvents {
-  /** Return this from the handler; it stays open until `end()`. */
+  /** Return this from a handler; it stays open until `end()`. */
   response: HttpResponse<DefaultBodyType>;
+  /**
+   * Prefer this as the handler: it returns `response` and also watches the request's
+   * `AbortSignal`, which is how the transport cancels (`AbortController.abort()`).
+   */
+  resolver: HttpResponseResolver;
   /** Frame and send one chunk. */
   push(chunk: UIMessageChunk): void;
   /** Send `[DONE]` and close the stream. */
   end(): void;
-  /** Resolves when the client cancels the stream (abort / transport `close()`). */
+  /** Resolves once the client cancelled: the request signal aborted or the body was cancelled. */
   aborted: Promise<void>;
 }
 
 /**
  * An event stream the test drives chunk by chunk — for "running" states, mid-stream aborts and
- * reconnects. Backed by a `ReadableStream` controller; `aborted` settles from its `cancel()`.
+ * reconnects. Backed by a `ReadableStream` controller. `aborted` settles when the client's
+ * request signal aborts (seen by `resolver`) or when the body stream is cancelled. Under MSW's
+ * mocked fetch only the signal path is reliable (a `reader.cancel()` does not reach the mocked
+ * stream), so tests should cancel through an `AbortController`, as the transport does, and
+ * register the handler with `resolver`.
  */
 export function controllableRunEvents({ firstSeq = 1 }: { firstSeq?: number } = {}) {
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -75,9 +84,14 @@ export function controllableRunEvents({ firstSeq = 1 }: { firstSeq?: number } = 
       markAborted();
     },
   });
+  const response = new HttpResponse(stream, { headers: UI_MESSAGE_STREAM_HEADERS });
 
   const events: ControllableRunEvents = {
-    response: new HttpResponse(stream, { headers: UI_MESSAGE_STREAM_HEADERS }),
+    response,
+    resolver: ({ request }) => {
+      request.signal.addEventListener("abort", () => markAborted(), { once: true });
+      return response;
+    },
     push(chunk) {
       controller?.enqueue(encoder.encode(frame(seq++, chunk)));
     },

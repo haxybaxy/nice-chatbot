@@ -205,10 +205,11 @@ describe("openEventStream", () => {
 
   it("hands back a live stream that the test can drive and the client can cancel", async () => {
     const events = controllableRunEvents();
-    server.use(mockRunEvents(STREAM_PATH, () => events.response));
+    server.use(mockRunEvents(STREAM_PATH, events.resolver));
     tokenStorage.setTokens(makeTokens());
+    const controller = new AbortController();
 
-    const stream = await openEventStream(STREAM_PATH, {});
+    const stream = await openEventStream(STREAM_PATH, { signal: controller.signal });
     const reader = stream.getReader();
     const first: UIMessageChunk = { type: "start", messageId: "msg-1" };
     events.push(first);
@@ -216,7 +217,10 @@ describe("openEventStream", () => {
     const { value } = await reader.read();
     expect(new TextDecoder().decode(value)).toBe(`id: 1\ndata: ${JSON.stringify(first)}\n\n`);
 
-    await reader.cancel();
+    // The transport cancels with its AbortController; the mock sees it through the request
+    // signal. (Under MSW's mocked fetch, cancelling the body reader does not reach the mocked
+    // stream and a read after the abort never settles, so neither is asserted here.)
+    controller.abort();
     await expect(events.aborted).resolves.toBeUndefined();
   });
 
