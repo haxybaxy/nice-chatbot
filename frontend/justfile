@@ -1,0 +1,89 @@
+# List all recipes
+default:
+    @just --list
+
+# Install dependencies exactly as locked
+install:
+    npm ci
+
+# Start the Vite dev server on :3000 (the backend's default CORS origin)
+dev:
+    npm run dev
+
+# Production build into dist/
+build:
+    npm run build
+
+# Serve the production build locally
+preview:
+    npm run preview
+
+# Format with prettier
+fmt:
+    npm run format
+
+# Lint and auto-fix with eslint (warnings fail)
+lint:
+    npx eslint . --max-warnings=0 --fix
+
+# Type check with tsc (strict)
+typecheck:
+    npm run typecheck
+
+# Dead-code scan with knip (unused files, exports, dependencies)
+deadcode:
+    npm run deadcode
+
+# Duplication scan with jscpd (report in claudedocs/jscpd)
+dup:
+    npm run dup
+
+# Fail on circular imports (madge)
+cycles:
+    npm run graph:circular
+
+# Dead code · duplication · complexity · architecture boundaries in one pass (fallow, .fallowrc.json)
+fallow:
+    npm run fallow
+
+# Run every quality gate
+check: fmt lint typecheck deadcode dup cycles fallow contract-check
+
+# Run the test suite once (pass extra vitest args, e.g. `just test -t "refresh"`)
+test *args:
+    npx vitest run {{ args }}
+
+# Run the test suite in watch mode
+watch:
+    npm run test
+
+# Run the test suite with a coverage report
+cov:
+    npm run coverage
+
+# What CI runs: non-mutating checks + tests
+ci:
+    npm run format:check
+    npm run lint
+    just typecheck deadcode dup cycles fallow contract-check
+    npm run test:run
+
+# Add shadcn components (e.g. `just ui-add dialog select`); rewrites their `cn` import to @/shared/utils
+ui-add *components:
+    npx shadcn@latest add {{ components }} --yes
+    sed -i '' 's#from "cn"#from "@/shared/utils"#' src/shared/components/ui/*.tsx
+    npm uninstall cn next-themes --no-audit --no-fund
+    npx prettier --write src/shared/components/ui --log-level warn
+
+# THE command after any backend API change: ../backend `just openapi-snapshot` -> copy the snapshot to
+# src/test/contract/openapi.json -> openapi-typescript. Commit all three generated files together.
+contract-refresh:
+    npm run contract:refresh
+
+# Non-mutating: openapi.json == backend snapshot and schema.d.ts == generator(openapi.json). Node only, no uv.
+contract-check:
+    npm run contract:check
+
+# Regenerate only the wire types from the committed snapshot
+types:
+    npm run types:generate

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["index.html", "src/features/*/index.ts"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": ["@fontsource-variable/geist", "shadcn", "tw-animate-css", "tailwindcss"],
+  "vite": true,
+  "vitest": true,
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "unlisted": "error",
+    "unresolved": "error",
+    "binaries": "error",
+    "exports": "warn",
+    "types": "warn",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "enumMembers": "warn",
+    "duplicates": "warn"
+  }
+}

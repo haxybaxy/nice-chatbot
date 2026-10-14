@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Feature barrels — knip's entry convention (knip.json). Listed rather than globbed:
+  // fallow's `*` crosses `/`, so `src/features/*/index.ts` would also match
+  // `src/features/auth/types/index.ts`. A new feature adds its barrel here AND to the
+  // `feature-api` zone below; forgetting fails loudly as an `app → features/<name>` violation.
+  "entry": ["src/features/auth/index.ts", "src/features/home/index.ts"],
+
+  // Mirrors knip.json: unused exports/types are trimmed, not blocked. Everything else
+  // (unused files, unlisted/unused/unresolved dependencies, cycles, boundaries) is an error.
+  "rules": {
+    "unused-exports": "warn",
+    "unused-types": "warn"
+  },
+
+  // Mirrors .jscpd.json: tests and the generated wire types are not clone material.
+  "duplicates": {
+    "ignore": ["src/shared/api/generated/**", "**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"]
+  },
+
+  // Cyclomatic (20) and cognitive (15) ceilings are fallow's defaults. The CRAP gate is off:
+  // it needs Istanbul coverage to mean anything, `just check` runs without tests, and coverage
+  // is reporting-only in this project (vitest.config.ts).
+  "health": {
+    "maxCrap": 10000,
+    "ignore": ["src/shared/api/generated/**"]
+  },
+
+  // Architecture boundaries — the "features are imported only through index.ts" rule from
+  // CLAUDE.md, enforced. Zones are first-match; `test` has no rule (unrestricted); `features`
+  // auto-discovers one zone per feature so sibling internals are isolated. `providers` may
+  // type-only-import feature internals (`SessionUser`): importing it through the barrel would
+  // create the cycle use-auth.ts → auth/index.ts → protected-route.tsx → use-auth.ts.
+  "boundaries": {
+    "zones": [
+      { "name": "test", "patterns": ["src/test/**", "src/**/__tests__/**"] },
+      {
+        "name": "feature-api",
+        "patterns": ["src/features/auth/index.ts", "src/features/home/index.ts"]
+      },
+      { "name": "feature-pages", "patterns": ["src/features/*/pages/**"] },
+      { "name": "features", "patterns": ["src/features/**"], "autoDiscover": ["src/features"] },
+      { "name": "providers", "patterns": ["src/providers/**"] },
+      { "name": "app", "patterns": ["src/App.tsx", "src/main.tsx", "src/layouts/**"] },
+      { "name": "shared", "patterns": ["src/shared/**"] }
+    ],
+    "rules": [
+      { "from": "app", "allow": ["feature-api", "feature-pages", "providers", "shared"] },
+      { "from": "providers", "allow": ["feature-api", "shared"], "allowTypeOnly": ["features"] },
+      { "from": "feature-api", "allow": ["features", "feature-pages"] },
+      { "from": "feature-pages", "allow": ["features", "feature-api", "providers", "shared"] },
+      { "from": "features", "allow": ["shared", "providers", "feature-api"] },
+      { "from": "shared", "allow": [] }
+    ]
+  }
+}

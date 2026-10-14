@@ -1,0 +1,17 @@
+{
+  "threshold": 2,
+  "minTokens": 50,
+  "minLines": 10,
+  "reporters": ["html", "json", "console"],
+  "output": "claudedocs/jscpd",
+  "gitignore": true,
+  "format": ["tsx", "typescript"],
+  "ignore": [
+    "**/*.test.tsx",
+    "**/*.test.ts",
+    "**/__tests__/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/shared/api/generated/**"
+  ]
+}

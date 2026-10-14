@@ -1,0 +1,12 @@
+# Gitignored files to copy into each new worktree via `wt step copy-ignored`
+# (wired up in .config/wt.toml). A file is copied only if it is BOTH gitignored
+# AND matches a pattern here, so tracked files (.env.example, docker.env,
+# terraform.tfvars) are never touched. Patterns match at any depth, so one list
+# covers every app's env file: backend/.env, frontend/.env.
+#
+# Keep this to env files — dependencies (node_modules, .venv) are installed
+# per-worktree by the hooks in .config/wt.toml, never copied (.venv holds
+# absolute paths and can't be relocated).
+.env
+.env*.local
+*.env

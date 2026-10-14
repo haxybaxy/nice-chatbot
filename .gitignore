@@ -1,0 +1,3 @@
+.DS_Store
+# created at the root by the pre-commit ruff hooks
+.ruff_cache/

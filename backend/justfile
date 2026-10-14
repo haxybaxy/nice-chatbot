@@ -1,0 +1,98 @@
+# List all recipes
+default:
+    @just --list
+
+# Install / sync dependencies
+sync:
+    uv sync
+
+# Start the dev server with hot reload (access logs come from our middleware, not uvicorn)
+dev:
+    uv run uvicorn app.main:app --reload --port 8000 --no-access-log
+
+# Start the local Postgres container and wait until it is healthy
+db-up:
+    docker compose up -d --wait
+
+# Stop the local Postgres container (data volume is kept)
+db-down:
+    docker compose down
+
+# Stop the container AND wipe its data volume, then start fresh
+db-reset:
+    docker compose down -v && docker compose up -d --wait
+
+# Format with ruff
+fmt:
+    uv run ruff format app tests
+
+# Lint and auto-fix with ruff
+lint:
+    uv run ruff check app tests --fix
+
+# Type check with basedpyright (strict, no `Any`)
+typecheck:
+    uv run basedpyright
+
+# Dead-code scan with vulture
+deadcode:
+    uv run vulture
+
+# Dependency hygiene with deptry (unused / missing / transitive imports)
+deps:
+    uv run deptry .
+
+# Structural-health gate: cycles, complexity, function length (app/.sentrux/rules.toml)
+audit:
+    uv run sentrux check app
+
+# Fail if uv.lock is out of date with pyproject.toml
+lock-check:
+    uv lock --check
+
+# Convention guards (tests/guards): architecture, routes, OpenAPI, schemas, settings, DB, migrations — no Docker needed
+guards:
+    uv run pytest tests/guards -q -p no:cacheprovider
+
+# Rewrite tests/guards/openapi.snapshot.json after an intentional API change
+openapi-snapshot:
+    uv run pytest tests/guards/test_openapi.py -q -p no:cacheprovider --update-openapi-snapshot
+
+# Run every quality gate
+check: fmt lint typecheck deadcode deps audit lock-check guards
+
+# Run the test suite (pass extra pytest args, e.g. `just test -k signup`)
+test *args:
+    uv run pytest {{ args }}
+
+# Run the test suite with a coverage report
+cov:
+    uv run pytest --cov --cov-report=term-missing --cov-report=html
+
+# What CI runs: non-mutating checks + tests (the suite includes tests/guards and the route-coverage check)
+ci:
+    uv lock --check
+    uv run ruff format --check app tests
+    uv run ruff check app tests
+    just typecheck deadcode deps audit
+    just test
+
+# Apply all pending migrations
+migrate:
+    uv run alembic upgrade head
+
+# Create a new migration from model changes
+migration msg:
+    uv run alembic revision --autogenerate -m "{{ msg }}"
+
+# Fail if the models have drifted from the migrations
+migrate-check:
+    uv run alembic check
+
+# Roll back one migration
+migrate-down:
+    uv run alembic downgrade -1
+
+# Show the current migration revision
+migrate-status:
+    uv run alembic current

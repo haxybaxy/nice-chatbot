@@ -1,0 +1,115 @@
+# pre-commit reads its config from the git root, so this lives here even though each
+# subproject owns its tooling. Hooks are scoped with `files:`; backend hooks run through
+# `uv run --project backend` so they work from the repo root without a cd.
+#
+#   uv run --project backend pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # The three generated contract artifacts are excluded from the fixers: a fixer that
+      # rewrote one would put it permanently at odds with its generator (frontend-contract-check).
+      - id: trailing-whitespace
+        exclude: ^(backend/tests/guards/openapi\.snapshot\.json|frontend/src/test/contract/openapi\.json|frontend/src/shared/api/generated/)
+      - id: end-of-file-fixer
+        exclude: ^(backend/tests/guards/openapi\.snapshot\.json|frontend/src/test/contract/openapi\.json|frontend/src/shared/api/generated/)
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: backend-ruff-check
+        name: "backend: ruff check --fix"
+        entry: uv run --project backend ruff check --fix --force-exclude
+        language: system
+        files: ^backend/.*\.py$
+      - id: backend-ruff-format
+        name: "backend: ruff format"
+        entry: uv run --project backend ruff format --force-exclude
+        language: system
+        files: ^backend/.*\.py$
+      - id: backend-basedpyright
+        name: "backend: basedpyright (strict)"
+        entry: uv run --project backend basedpyright --project backend/pyproject.toml
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+      # The rest of `just check`, so a commit runs the whole gate. `--directory backend` runs each
+      # tool with backend/ as the working directory (pyproject config, alembic.ini, .env).
+      - id: backend-vulture
+        name: "backend: vulture (dead code)"
+        entry: uv run --directory backend vulture
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+      - id: backend-deptry
+        name: "backend: deptry (dependency hygiene)"
+        entry: uv run --directory backend deptry .
+        language: system
+        files: ^backend/(.*\.py|pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      - id: backend-sentrux
+        name: "backend: sentrux (structural health)"
+        entry: uv run --directory backend sentrux check app
+        language: system
+        files: ^backend/app/.*\.py$
+        pass_filenames: false
+      - id: backend-lock-check
+        name: "backend: uv lock --check"
+        entry: uv lock --check --directory backend
+        language: system
+        files: ^backend/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      # Convention guards (tests/guards): DB-free, so they run on every commit. The full suite
+      # (with Postgres) runs in CI: .github/workflows/backend.yml.
+      - id: backend-guards
+        name: "backend: convention guards (tests/guards)"
+        entry: uv run --directory backend pytest tests/guards -q -p no:cacheprovider
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: frontend-prettier
+        name: "frontend: prettier --write"
+        entry: frontend/node_modules/.bin/prettier --write --ignore-path frontend/.prettierignore
+        language: system
+        files: ^frontend/.*\.(ts|tsx|mjs|json|css|md)$
+        exclude: ^frontend/(package-lock\.json|src/shared/api/generated/|src/test/contract/openapi\.json)
+      - id: frontend-eslint
+        name: "frontend: eslint (0 warnings)"
+        entry: npm --prefix frontend run --silent lint
+        language: system
+        files: ^frontend/.*\.(ts|tsx|mjs)$
+        pass_filenames: false
+      - id: frontend-typecheck
+        name: "frontend: tsc --noEmit"
+        entry: npm --prefix frontend run --silent typecheck
+        language: system
+        files: ^frontend/.*\.(ts|tsx|json)$
+        pass_filenames: false
+      # Whole-project fallow pass (dead code, duplication, complexity, architecture boundaries —
+      # frontend/.fallowrc.json). Sub-second, so it runs on every commit like the tools above.
+      - id: frontend-fallow
+        name: "frontend: fallow (dead code · dupes · complexity · boundaries)"
+        entry: npm --prefix frontend run --silent fallow
+        language: system
+        files: ^frontend/(src/|package\.json|\.fallowrc\.json)
+        pass_filenames: false
+      # The contract chain's frontend links (frontend/scripts/check-contract.sh): the vendored
+      # spec is a byte copy of the backend snapshot and schema.d.ts is what the generator emits
+      # from it. Fires when either end of the chain or the generator moves — including a
+      # backend-only commit that ran `just openapi-snapshot`, which is the point: that commit
+      # must also carry `just contract-refresh` (frontend/). Needs `npm ci` in frontend/.
+      - id: frontend-contract-check
+        name: "frontend: contract check (snapshot → openapi.json → schema.d.ts)"
+        entry: bash frontend/scripts/check-contract.sh
+        language: system
+        files: ^(backend/tests/guards/openapi\.snapshot\.json|frontend/src/test/contract/|frontend/src/shared/api/generated/|frontend/scripts/|frontend/package(-lock)?\.json)
+        pass_filenames: false
+      - id: infra-tofu-fmt
+        name: "infra: tofu fmt -check"
+        entry: tofu fmt -check -diff -recursive infra
+        language: system
+        files: ^infra/.*\.tf$
+        pass_filenames: false

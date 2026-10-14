@@ -1,0 +1,62 @@
+# Run from infra/. Recipes use whatever AWS credentials the environment provides: the `default`
+# profile, or AWS_PROFILE when exported. `just login` is only for an `aws login` session profile.
+
+env_dir := "environments"
+
+# List all recipes
+default:
+    @just --list
+
+# Re-authenticate an `aws login` session profile (static keys in `default` need nothing)
+login profile="acme":
+    aws login --profile {{ profile }}
+
+# One-time: create the S3 state bucket (idempotent)
+bootstrap:
+    ./bootstrap.sh
+
+# Download providers and connect the S3 backend for an environment
+init env="develop":
+    tofu -chdir={{ env_dir }}/{{ env }} init
+
+# Show what would change
+plan env="develop":
+    tofu -chdir={{ env_dir }}/{{ env }} plan
+
+# Apply changes (asks for confirmation)
+apply env="develop":
+    tofu -chdir={{ env_dir }}/{{ env }} apply
+
+# Destroy everything in an environment (asks for confirmation)
+destroy env="develop":
+    tofu -chdir={{ env_dir }}/{{ env }} destroy
+
+# Print every output
+output env="develop":
+    tofu -chdir={{ env_dir }}/{{ env }} output
+
+# Print the lines to paste into backend/.env
+backend-env env="develop":
+    @tofu -chdir={{ env_dir }}/{{ env }} output -raw backend_env
+
+# Format every .tf file in place
+fmt:
+    tofu fmt -recursive
+
+# Fail if any .tf file is not formatted
+fmt-check:
+    tofu fmt -check -diff -recursive
+
+# Offline syntax/type check of every environment and, through it, the modules it calls
+# (downloads providers, no AWS access)
+validate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in {{ env_dir }}/*; do
+        echo "==> $dir"
+        tofu -chdir="$dir" init -backend=false -input=false > /dev/null
+        tofu -chdir="$dir" validate
+    done
+
+# Every non-mutating check
+check: fmt-check validate

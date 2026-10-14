@@ -1,0 +1,63 @@
+# Backend quality gate: `just ci` (lockfile, ruff, basedpyright, vulture, deptry, sentrux, the
+# convention guards and the full pytest suite against a real Postgres).
+#
+# To make this binding, require the "backend / just ci" check in the branch protection rules
+# for `main` (a repository setting, not something this file can enforce).
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: just ci
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: acme_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d acme_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # tests/conftest.py supplies every other variable the settings classes need.
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/acme_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: extractions/setup-just@v3
+
+      # Python version comes from backend/.python-version.
+      - run: uv sync --frozen
+
+      - run: just ci

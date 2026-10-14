@@ -1,0 +1,15 @@
+# OpenTofu / Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars.json
+
+# Committed on purpose: .terraform.lock.hcl (provider pins) and *.tfvars (per-env config, no secrets).

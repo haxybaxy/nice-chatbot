@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# sentrux: rules.toml is committed, the baseline is local runtime state
+app/.sentrux/baseline.json
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

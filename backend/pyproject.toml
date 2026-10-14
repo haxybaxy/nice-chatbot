@@ -1,0 +1,242 @@
+[project]
+name = "acme-backend"
+version = "0.1.0"
+description = "Acme backend API (FastAPI, async SQLAlchemy 2, AWS Cognito)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    # Imported directly (starlette.types, starlette.exceptions); declared so deptry
+    # doesn't flag it as a transitive-only import.
+    "starlette>=1.0.0",
+    # Runtime entrypoint only (`uvicorn app.main:app`); never imported → deptry DEP002 ignore.
+    "uvicorn[standard]>=0.52.4",
+    "pydantic[email]>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.0.52",
+    # Loaded by SQLAlchemy from the postgresql+psycopg:// URL; never imported → DEP002 ignore.
+    "psycopg[binary]>=3.3.5",
+    "alembic>=1.20.0",
+    "structlog>=26.1.0",
+    "pyjwt[crypto]>=2.14.0",
+    # AWS: Cognito (cognito-idp admin API) and SES v2 (outgoing mail).
+    "boto3>=1.43.0",
+    # botocore.exceptions.ClientError is imported directly.
+    "botocore>=1.43.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+# Flat layout: app/ lives at the project root, not under src/.
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+    "basedpyright>=1.40.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    # ASGITransport test client.
+    "httpx>=0.28.1",
+    # RSA keypair generation for the JWT verification tests.
+    "cryptography>=50.0.1",
+    "deptry>=0.25.1",
+    "vulture>=2.16",
+    # Structural-health gate. PyPI lags the brew binary; see CLAUDE.md.
+    "sentrux>=0.1.6",
+    "boto3-stubs[cognito-idp,sesv2]>=1.43.0",
+    # awscrt lets botocore resolve `aws login` session profiles (AWS_PROFILE=acme just dev).
+    # Deployed backends use an IAM role, so it is dev-only.
+    "botocore[crt]>=1.43.0",
+    "pre-commit>=4.6.2",
+]
+
+# ── Ruff ─────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear (B008 stays on: dependencies are `Annotated[...]`, never `= Depends()`)
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "LOG",   # flake8-logging
+    "G",     # flake8-logging-format (no f-string/%/.format in log calls)
+    "ARG",   # unused arguments
+    "RUF",   # ruff-specific rules
+    "ASYNC", # flake8-async: blocking calls (sleep, open, sync HTTP, subprocess) inside async code
+    "FAST",  # FastAPI: Annotated dependencies (FAST002), redundant response_model (FAST001)
+    "DTZ",   # naive datetimes
+    "BLE",   # blind `except Exception` (hides bugs; the two probe sites carry a noqa)
+    "T20",   # print()
+    "N",     # pep8 naming
+    "PT",    # pytest style
+    "S",     # bandit
+    "ERA",   # commented-out code
+    "FIX",   # TODO / FIXME / XXX / HACK left in code
+    "PLC0415", # imports at module top only — a lazy import can hide a cycle from sentrux
+    "TID",   # banned imports (TID251, list below) and no relative imports (TID252)
+]
+ignore = [
+    "E501",    # line too long (handled by the formatter)
+    "FAST003", # path params consumed by validation dependencies (`get_membership`) look unused to ruff
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+# Each ban names the sanctioned alternative. A legitimate exception is a line-level
+# `# noqa: TID251` at the one place the convention says it belongs (listed in CLAUDE.md).
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pydantic.BaseModel".msg = "Inherit BaseSchema / BaseSchemaOut from app.core.schemas (CLAUDE.md → Conventions → Schemas)"
+"pydantic_settings.BaseSettings".msg = "Settings classes live only in config.py modules (app/core/config.py, app/db/config.py)"
+"os.environ".msg = "Read configuration through the settings objects in config.py, never the process environment"
+"os.getenv".msg = "Read configuration through the settings objects in config.py, never the process environment"
+"os.putenv".msg = "Configuration is read-only at runtime; set it in .env or the process environment"
+"fastapi.HTTPException".msg = "Raise AppError.<factory>() (app.core.exceptions); the handlers build the envelope"
+"fastapi.exceptions.HTTPException".msg = "Raise AppError.<factory>() (app.core.exceptions); the handlers build the envelope"
+"starlette.exceptions.HTTPException".msg = "Raise AppError.<factory>() (app.core.exceptions); the handlers build the envelope"
+"fastapi.responses.JSONResponse".msg = "Return the domain object and let response_model serialize it (camelCase aliasing lives there)"
+"starlette.responses.JSONResponse".msg = "Return the domain object and let response_model serialize it (camelCase aliasing lives there)"
+"fastapi.BackgroundTasks".msg = "In-process, no retry, lost if the worker dies. Only for <1 s droppable work: add `# noqa: TID251` with the justification, otherwise use a real queue"
+"fastapi.background.BackgroundTasks".msg = "In-process, no retry, lost if the worker dies. Only for <1 s droppable work: add `# noqa: TID251` with the justification, otherwise use a real queue"
+"starlette.background.BackgroundTasks".msg = "In-process, no retry, lost if the worker dies. Only for <1 s droppable work: add `# noqa: TID251` with the justification, otherwise use a real queue"
+"structlog".msg = "Use `from app.core.logging_config import get_logger`; only logging_config imports structlog"
+"logging.getLogger".msg = "Use `from app.core.logging_config import get_logger` so records go through the structlog pipeline"
+"time.sleep".msg = "Blocks the event loop: `await asyncio.sleep(...)`, or `asyncio.to_thread` for a sync library"
+"requests".msg = "Sync HTTP blocks the event loop: use httpx.AsyncClient (or asyncio.to_thread for a sync SDK)"
+"jose".msg = "python-jose is unmaintained; use PyJWT (`import jwt`) as app.core.security does"
+"async_asgi_testclient".msg = "Unmaintained; use the `client` fixture (httpx.AsyncClient + ASGITransport)"
+"fastapi.testclient.TestClient".msg = "Sync test client; use the `client` fixture (httpx.AsyncClient + ASGITransport)"
+"starlette.testclient.TestClient".msg = "Sync test client; use the `client` fixture (httpx.AsyncClient + ASGITransport)"
+"sqlalchemy.create_engine".msg = "Async only: app.db.session.engine / create_async_engine"
+"sqlalchemy.orm.Session".msg = "Async only: sqlalchemy.ext.asyncio.AsyncSession via DbDep"
+"sqlalchemy.orm.sessionmaker".msg = "Async only: app.db.session.async_session_maker"
+"boto3".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
+"botocore".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
+
+[tool.ruff.lint.per-file-ignores]
+# The env bootstrap must run before any `app` import, and it is the one place the process
+# environment is written (os.environ) and a private BaseSettings is declared.
+"tests/conftest.py" = ["E402", "TID251"]
+# The one place BaseModel is legitimately subclassed: it defines the bases.
+"app/core/schemas.py" = ["TID251"]
+# The one structlog / stdlib-logging site.
+"app/core/logging_config.py" = ["TID251"]
+# Test code asserts and uses literal credentials.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ── basedpyright ─────────────────────────────────────────────────────────────
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.13"
+include = ["app", "tests"]
+exclude = ["**/__pycache__", ".venv"]
+venvPath = "."
+venv = ".venv"
+# The "no Any from the get-go" lock: written `Any` is an error everywhere.
+reportExplicitAny = "error"
+# Every `pyright: ignore` must name the rule it suppresses, and must be needed.
+reportIgnoreCommentWithoutRule = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+# The reportUnknown* family stays at its strict default (on). If a library boundary
+# makes a rule unworkable, scope it down per file with a commented header — never globally.
+
+# ── pytest / coverage ────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# One event loop for the whole session: the async engine's pooled psycopg connections are
+# loop-bound, so fixtures and tests must share the loop the session-scoped engine uses.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-ra --strict-markers"
+# Deprecated pydantic v1-style APIs (json_encoders, .dict(), class Config) and legacy SQLAlchemy
+# APIs fail the suite instead of warning.
+filterwarnings = [
+    "error::pydantic.warnings.PydanticDeprecationWarning",
+    "error::sqlalchemy.exc.SADeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+# SQLAlchemy's async layer runs the sync driver in greenlets; without this, coverage loses the
+# trace after every awaited query and under-reports the code that follows it.
+concurrency = ["greenlet"]
+omit = ["app/db/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "@overload",
+    "\\.\\.\\.$",
+]
+
+# ── deptry ───────────────────────────────────────────────────────────────────
+
+[tool.deptry]
+known_first_party = ["app", "tests"]
+
+[tool.deptry.per_rule_ignores]
+# Declared but never imported: uvicorn is the CLI entrypoint, psycopg is loaded via the DB URL.
+DEP002 = ["uvicorn", "psycopg"]
+
+# ── vulture ──────────────────────────────────────────────────────────────────
+
+[tool.vulture]
+paths = ["app"]
+# 60 reports unused functions/classes/methods — the point of running vulture. Pydantic and ORM
+# field declarations look "unused" to it (they are read by serialization / the ORM), so the
+# schema and model modules are excluded rather than whitelisting every field; ruff still
+# catches unused imports of them. FastAPI handlers and validators are only referenced through
+# decorators, hence the decorator list.
+exclude = ["*/migrations/*", "*/schemas.py", "*/models.py"]
+min_confidence = 60
+sort_by_size = true
+ignore_decorators = [
+    "@router.*",
+    "@app.*",
+    "@api_router.*",
+    "@field_validator",
+    "@model_validator",
+    "@asynccontextmanager",
+    "@cache",
+]
+ignore_names = [
+    # subclassed only in the excluded models.py modules
+    "Base",
+    "TimestampMixin",
+    # pydantic / SQLAlchemy / stdlib protocol names
+    "model_config",
+    "__tablename__",
+    "__table_args__",
+    "__cause__",
+    "metadata",
+    "updated_at",
+    # fields read only through serialization (dataclasses / pydantic models outside schemas.py)
+    "expires_in",
+    "service",
+    # called from outside app/ (alembic env, tests)
+    "register_all_models",
+    "lifespan",
+]

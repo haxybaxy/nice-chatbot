@@ -1,0 +1,17 @@
+# worktrunk hooks — run automatically when you create a new worktree
+# (`wt switch --create <branch>`, e.g. the `nt` alias). Docs: https://worktrunk.dev/hook/
+#
+# Monorepo-wide setup. pre-start blocks until its commands finish, so env files
+# and dependencies are ready the moment you land in the new worktree. The keys in
+# this table run CONCURRENTLY — the env-file copy and the installs don't depend on
+# each other, so they all run at once.
+#
+# Dependencies are installed per-worktree, never copied: node_modules and .venv
+# hold worktree/machine-specific state (.venv even stores absolute paths), so they
+# stay OUT of ../.worktreeinclude. Prefer not to block on an install? Move that key
+# into a [post-start] table and it finishes in the background instead.
+
+[pre-start]
+env = "wt step copy-ignored --require-include"
+frontend = "cd frontend && npm ci"
+backend = "cd backend && uv sync"

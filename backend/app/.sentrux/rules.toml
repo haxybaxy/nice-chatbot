@@ -1,0 +1,15 @@
+# Structural-health gate for `sentrux check app` (reads <path>/.sentrux/rules.toml).
+#
+# Semantics of the PyPI release (0.1.x) in use — they differ from the newer brew binary:
+#   max_cycles   — import cycles across the analysed tree. Locked at zero; sentrux counts
+#                  function-local and TYPE_CHECKING imports too, so a cycle can't be smuggled
+#                  in behind a lazy import.
+#   max_cc       — cyclomatic complexity summed PER FILE (not per function).
+#   max_fn_lines — file line count divided by its function count, i.e. average lines per
+#                  function including docstrings and comments.
+# Thresholds sit a little above today's worst file (core/cognito.py: the boto3 adapter's
+# try/except per call). Tighten when you can; loosen only with a reviewed diff.
+[constraints]
+max_cycles = 0
+max_cc = 30
+max_fn_lines = 120

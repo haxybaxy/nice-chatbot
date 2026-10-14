@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Build outputs and reports
+dist
+coverage
+claudedocs/jscpd
+
+# Package manager
+package-lock.json
+
+# Generated backend OpenAPI snapshot. Written by scripts/refresh-openapi.sh in a fixed
+# json.dump format (indent=2, sort_keys). Keep prettier off it so a format pass doesn't
+# reshape it — otherwise the next `npm run contract:refresh` produces a huge reformat diff
+# that buries real schema drift.
+src/test/contract/openapi.json
+
+# Generated wire types (scripts/refresh-openapi.sh → openapi-typescript). Same reasoning:
+# keep prettier off the generator's byte format so drift diffs compare like with like.
+src/shared/api/generated/

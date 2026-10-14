@@ -1,0 +1,13 @@
+# `just mprocs` — the whole stack, one pane per process. Postgres is started (detached, healthy,
+# migrated) by the recipe before mprocs opens; the `db` pane only follows its logs.
+# Keys: ←/→ or j/k select a pane, x stops it, s starts it, r restarts it, q quits everything.
+procs:
+  api:
+    shell: just dev
+    cwd: <CONFIG_DIR>/backend
+  web:
+    shell: just dev
+    cwd: <CONFIG_DIR>/frontend
+  db:
+    shell: docker compose logs --follow --tail 50 postgres
+    cwd: <CONFIG_DIR>/backend
