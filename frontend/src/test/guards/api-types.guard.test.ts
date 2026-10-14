@@ -8,6 +8,9 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import type {
   BodylessPaths,
+  FormBody,
+  FormPaths,
+  JsonPaths,
   PathParams,
   PathsWith,
   QueryParams,
@@ -72,5 +75,24 @@ describe("generated API type helpers", () => {
     expectTypeOf<PathsWith<"put">>().toEqualTypeOf<never>();
     // No DELETE takes a body today; if one ever does, `apiClient.delete` will refuse it.
     expectTypeOf<BodylessPaths<"delete">>().toEqualTypeOf<PathsWith<"delete">>();
+  });
+
+  it("separates the multipart operation from the JSON ones", () => {
+    type Upload = "/api/teams/{team_id}/attachments";
+    expectTypeOf<FormPaths<"post">>().toEqualTypeOf<Upload>();
+    expectTypeOf<FormPaths<"get">>().toEqualTypeOf<never>();
+    expectTypeOf<FormBody<Upload, "post">>().toEqualTypeOf<
+      Schema<"Body_upload_attachment_api_teams__team_id__attachments_post">
+    >();
+    expectTypeOf<FormBody<"/api/auth/signup", "post">>().toEqualTypeOf<never>();
+    // The upload has no JSON body, yet it is neither a JSON path nor a bodyless one: only
+    // `apiClient.upload` accepts it.
+    expectTypeOf<RequestBody<Upload, "post">>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<JsonPaths<"post">, Upload>>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<BodylessPaths<"post">, Upload>>().toEqualTypeOf<never>();
+    expectTypeOf<SuccessBody<Upload, "post">>().toEqualTypeOf<Schema<"AttachmentOut">>();
+    expectTypeOf<QueryParams<"/api/attachments/{attachment_id}/content", "get">>().toEqualTypeOf<{
+      download?: boolean;
+    }>();
   });
 });

@@ -5,7 +5,8 @@
  * (`POST …/messages` → `RunOut`), and the run's events are a separate, replayable
  * `text/event-stream` (`GET …/runs/{run_id}/events`). So:
  *
- *  - `sendMessages` posts the last user message's text parts with the composer's run options,
+ *  - `sendMessages` posts the last user message's parts (`toMessagePartsIn`: text as is, a
+ *    `file` part as the id of the upload its `url` points at) with the composer's run options,
  *    then opens that run's events;
  *  - `reconnectToStream` asks for the active run (`null` when the backend says 404 — the
  *    response finished while the client was away; `onReconnectMiss` lets the hook refetch the
@@ -21,7 +22,6 @@
  */
 import {
   type ChatTransport,
-  isTextUIPart,
   parseJsonEventStream,
   type UIMessageChunk,
   uiMessageChunkSchema,
@@ -32,6 +32,7 @@ import { openEventStream } from "@/shared/services/sse-client";
 
 import { chatService } from "./chat.service";
 import type { ChatMessage, CreateMessageRequest, Run, RunRequestOptions } from "../types";
+import { toMessagePartsIn } from "../utils/message-parts";
 
 export interface ConversationRunTransportOptions {
   conversationId: string;
@@ -84,7 +85,7 @@ export class ConversationRunTransport implements ChatTransport<ChatMessage> {
       throw new Error("Regenerating a response is not supported.");
     }
     const body: CreateMessageRequest = {
-      parts: lastUserTextParts(messages),
+      parts: toMessagePartsIn(lastUserMessage(messages).parts),
       ...this.options.getRunOptions(),
     };
     const run = await chatService.sendMessage(this.options.conversationId, body);
@@ -167,17 +168,11 @@ export class ConversationRunTransport implements ChatTransport<ChatMessage> {
   }
 }
 
-/** The text parts of the message being submitted, as `TextPartIn`s. */
-function lastUserTextParts(messages: readonly ChatMessage[]): CreateMessageRequest["parts"] {
+/** The message being submitted: `useChat` appends it last. */
+function lastUserMessage(messages: readonly ChatMessage[]): ChatMessage {
   const last = messages.at(-1);
   if (!last || last.role !== "user") {
     throw new Error("There is no user message to send.");
   }
-  const parts = last.parts
-    .filter(isTextUIPart)
-    .map(({ text }) => ({ type: "text" as const, text }));
-  if (parts.length === 0) {
-    throw new Error("The message has no text.");
-  }
-  return parts;
+  return last;
 }

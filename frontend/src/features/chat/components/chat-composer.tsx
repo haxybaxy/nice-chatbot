@@ -1,24 +1,37 @@
 import type { ChatStatus } from "ai";
-import { CodeIcon, GlobeIcon, MessageSquareIcon, TelescopeIcon } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import {
   PromptInput,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
+  PromptInputHeader,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
 } from "@/shared/components/ai-elements/prompt-input";
 
+import { AttachFilesButton } from "./attach-files-button";
+import { ComposerAttachments } from "./composer-attachments";
+import { ComposerModeButtons } from "./composer-mode-buttons";
 import { ModelSelect } from "./model-select";
+import { useComposerAttachments, useComposerFileEvents } from "../hooks/use-composer-attachments";
 import { type ComposerSettings, resolveModelId } from "../hooks/use-composer-settings";
-import type { ChatModel, RunMode } from "../types";
+import { usePendingUploads } from "../hooks/use-pending-uploads";
+import type { ChatModel, ComposerSubmission } from "../types";
+import { ATTACHMENT_MAX_FILES, isImageMediaType } from "../utils/attachments";
 
 interface ChatComposerProps {
+  /** Uploads are per team (`POST /api/teams/{team_id}/attachments`). */
+  teamId: string;
   status: ChatStatus;
-  onSubmit: (text: string) => void | Promise<void>;
+  /**
+   * Called once every pending file is uploaded. Resolve when the message was accepted — the
+   * thread does so at once (the optimistic message is in), a new chat once it is created; a
+   * rejection keeps the text and the files for a retry.
+   */
+  onSubmit: (message: ComposerSubmission) => void | Promise<void>;
   onStop: () => void;
   settings: ComposerSettings;
   onSettingsChange: (patch: Partial<ComposerSettings>) => void;
@@ -26,17 +39,22 @@ interface ChatComposerProps {
   placeholder?: string;
 }
 
-const MODES: readonly { mode: RunMode; label: string; icon: typeof MessageSquareIcon }[] = [
-  { mode: "chat", label: "Chat", icon: MessageSquareIcon },
-  { mode: "deep_research", label: "Deep research", icon: TelescopeIcon },
-];
+const reportRejectedFile = (message: string) => toast.error(message);
 
 /**
- * The prompt box: textarea + model select, Chat / Deep research mode, the Search and Code
- * toggles (Chat mode only) and a submit button that turns into Stop while a response runs.
- * Submitting is possible only when the thread is `ready` and there is text.
+ * The prompt box: textarea + attachments (paperclip, drop, paste), model select, Chat / Deep
+ * research mode, the Search and Code toggles (Chat mode only) and a submit button that turns
+ * into Stop while a response runs. Submitting needs a `ready` thread, no upload in flight and
+ * some text or at least one file; the files are uploaded first (`usePendingUploads`), then
+ * `onSubmit` gets the text and the uploads as SDK file parts.
+ *
+ * The pending files are the composer's own state (`useComposerAttachments`), not the vendored
+ * `PromptInput`'s: its list hands `onSubmit` data/blob URLs, and a multipart upload needs the
+ * `File`s. The vendored textarea still owns Enter-to-submit; paste, drop and Backspace are
+ * `useComposerFileEvents`.
  */
 export function ChatComposer({
+  teamId,
   status,
   onSubmit,
   onStop,
@@ -46,71 +64,66 @@ export function ChatComposer({
   placeholder = "Message the assistant…",
 }: ChatComposerProps) {
   const [text, setText] = useState("");
+  const attachments = useComposerAttachments(reportRejectedFile);
+  const { uploadAll, isUploading } = usePendingUploads(teamId);
+  const fileEvents = useComposerFileEvents(attachments, isUploading);
+
   const isGenerating = status === "submitted" || status === "streaming";
-  const canSubmit = status === "ready" && text.trim().length > 0;
+  const hasContent = text.trim().length > 0 || attachments.files.length > 0;
+  const canSubmit = status === "ready" && !isUploading && hasContent;
+  const modelId = resolveModelId(settings, models);
+  const showVisionHint =
+    models.find((entry) => entry.id === modelId)?.supportsVision === false &&
+    attachments.files.some((entry) => isImageMediaType(entry.file.type));
+
+  const submit = async () => {
+    if (!canSubmit) {
+      return;
+    }
+    const files = await uploadAll(attachments.files);
+    await onSubmit({ text: text.trim(), files });
+    setText("");
+    attachments.clear();
+  };
 
   return (
     <PromptInput
-      onSubmit={async ({ text: submitted }) => {
-        const message = submitted.trim();
-        if (!message || status !== "ready") {
-          return;
-        }
-        setText("");
-        await onSubmit(message);
-      }}
+      onSubmit={submit}
+      onDragOverCapture={fileEvents.onDragOverCapture}
+      onDropCapture={fileEvents.onDropCapture}
     >
+      {attachments.files.length > 0 && (
+        <PromptInputHeader>
+          <ComposerAttachments
+            files={attachments.files}
+            onRemove={attachments.remove}
+            uploading={isUploading}
+            showVisionHint={showVisionHint}
+          />
+        </PromptInputHeader>
+      )}
       <PromptInputBody>
         <PromptInputTextarea
           aria-label="Message"
           placeholder={placeholder}
           value={text}
           onChange={(event) => setText(event.currentTarget.value)}
+          onPaste={fileEvents.onPaste}
+          onKeyDown={fileEvents.onKeyDown}
         />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
+          <AttachFilesButton
+            disabled={isUploading || attachments.files.length >= ATTACHMENT_MAX_FILES}
+            onFiles={attachments.add}
+          />
           <ModelSelect
             models={models}
-            value={resolveModelId(settings, models)}
+            value={modelId}
             onChange={(model) => onSettingsChange({ model })}
           />
-          <div role="group" aria-label="Mode" className="flex items-center">
-            {MODES.map(({ mode, label, icon: Icon }) => (
-              <PromptInputButton
-                key={mode}
-                type="button"
-                aria-pressed={settings.mode === mode}
-                variant={settings.mode === mode ? "secondary" : "ghost"}
-                onClick={() => onSettingsChange({ mode })}
-              >
-                <Icon />
-                {label}
-              </PromptInputButton>
-            ))}
-          </div>
-          {settings.mode === "chat" && (
-            <>
-              <PromptInputButton
-                type="button"
-                aria-pressed={settings.webSearch}
-                variant={settings.webSearch ? "secondary" : "ghost"}
-                onClick={() => onSettingsChange({ webSearch: !settings.webSearch })}
-              >
-                <GlobeIcon />
-                Search
-              </PromptInputButton>
-              <PromptInputButton
-                type="button"
-                aria-pressed={settings.code}
-                variant={settings.code ? "secondary" : "ghost"}
-                onClick={() => onSettingsChange({ code: !settings.code })}
-              >
-                <CodeIcon />
-                Code
-              </PromptInputButton>
-            </>
-          )}
+          <ComposerModeButtons settings={settings} onSettingsChange={onSettingsChange} />
         </PromptInputTools>
         <PromptInputSubmit
           status={status}

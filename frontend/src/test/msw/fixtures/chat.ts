@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   ChatModel,
   Conversation,
   ConversationDetail,
@@ -13,7 +14,7 @@ const NOW = "2026-01-01T12:00:00Z";
 export const DEFAULT_MODEL_ID = "anthropic:claude-opus-5-5";
 
 /** One model-picker entry (`ModelOut`). */
-function makeModel(overrides: Partial<ChatModel> = {}): ChatModel {
+export function makeModel(overrides: Partial<ChatModel> = {}): ChatModel {
   return {
     id: DEFAULT_MODEL_ID,
     provider: "anthropic",
@@ -77,6 +78,54 @@ export function makeConversation(overrides: Partial<Conversation> = {}): Convers
 /** A persisted `text` part, as the backend folds a finished text stream. */
 export function textPart(text: string): WirePart {
   return { type: "text", text, state: "done" };
+}
+
+/**
+ * The bytes the content mocks serve; the media type is the attachment's. ASCII on purpose: the
+ * mocked XHR path (axios → MSW's interceptor) round-trips a blob body through text, so a real
+ * PNG signature would come back re-encoded and its size would not match.
+ */
+export const ATTACHMENT_BYTES = new TextEncoder().encode("PNG.");
+
+/**
+ * An upload (`AttachmentOut`): a small PNG unless overridden. Nullable fields come as `null`,
+ * as the backend sends them; `url` is the bearer-protected content route.
+ */
+export function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
+  const id = overrides.id ?? `att-${counter++}`;
+  return {
+    id,
+    teamId: "team-1",
+    filename: "photo.png",
+    mediaType: "image/png",
+    sizeBytes: ATTACHMENT_BYTES.byteLength,
+    kind: "image",
+    textChars: null,
+    extractionError: null,
+    messageId: null,
+    url: `/api/attachments/${id}/content`,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+/** The `kind` the backend derives from a media type (the upload mock mirrors it). */
+export function attachmentKind(mediaType: string): Attachment["kind"] {
+  if (mediaType.startsWith("image/")) return "image";
+  if (mediaType === "application/pdf") return "pdf";
+  if (mediaType.endsWith("wordprocessingml.document")) return "docx";
+  return "text";
+}
+
+/** A persisted `file` part (`FilePartOut`), as a message claims an attachment. */
+export function filePart(attachment: Attachment): WirePart {
+  return {
+    type: "file",
+    mediaType: attachment.mediaType,
+    filename: attachment.filename,
+    url: attachment.url,
+    attachmentId: attachment.id,
+  };
 }
 
 type MessageOverrides = Partial<WireMessage> & Pick<WireMessage, "role"> & { text?: string };

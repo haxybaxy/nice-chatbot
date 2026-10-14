@@ -8,7 +8,7 @@
  * its wire slot with `Narrows<>` and turned into a typed part by the runtime guards in
  * `../utils/payload-guards.ts`, never by a cast.
  */
-import type { DataUIPart, ToolUIPart, UIMessage } from "ai";
+import type { DataUIPart, FileUIPart, ToolUIPart, UIMessage } from "ai";
 
 import type { Narrows, Schema } from "@/shared/api/types";
 
@@ -34,6 +34,12 @@ export type UpdateConversationRequest = Schema<"UpdateConversationIn">;
 
 /** `POST /api/conversations/{conversation_id}/messages` body. */
 export type CreateMessageRequest = Schema<"CreateMessageIn">;
+
+/** One entry of `CreateMessageIn.parts`: a text part or a reference to an uploaded attachment. */
+export type MessagePartRequest = CreateMessageRequest["parts"][number];
+
+/** An uploaded file (`AttachmentOut`): what `POST /api/teams/{team_id}/attachments` returns. */
+export type Attachment = Schema<"AttachmentOut">;
 
 /** The run settings a message is sent with: what the composer decides (`CreateMessageIn` minus `parts`). */
 export type RunRequestOptions = Pick<CreateMessageRequest, "model" | "mode" | "tools">;
@@ -180,3 +186,13 @@ export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTool
 export type ChatMessagePart = ChatMessage["parts"][number];
 export type ChatToolPart = ToolUIPart<ChatTools>;
 export type ChatDataPart = DataUIPart<ChatDataParts>;
+
+/**
+ * What the composer hands over on submit — a client-only shape, never on the wire: the trimmed
+ * text and the uploads already converted to SDK file parts (`toFileUIPart`), which `useChat`
+ * appends as the optimistic user message and the transport maps back to `FilePartIn`.
+ */
+export interface ComposerSubmission {
+  text: string;
+  files: FileUIPart[];
+}

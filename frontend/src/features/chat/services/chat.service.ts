@@ -2,6 +2,7 @@ import { API_ENDPOINTS } from "@/shared/config/api-endpoints";
 import { ApiError, apiClient } from "@/shared/services/api-client";
 
 import type {
+  Attachment,
   ChatModel,
   Conversation,
   ConversationDetail,
@@ -14,8 +15,9 @@ import type {
 
 /**
  * Chat service — the JSON side of `/api/chat/*`, `/api/teams/{id}/conversations` and
- * `/api/conversations/*`. The run event stream is not here: `ConversationRunTransport` opens it
- * through `openEventStream` (`shared/services/sse-client.ts`).
+ * `/api/conversations/*`, plus the attachments (multipart up, bytes down). The run event
+ * stream is not here: `ConversationRunTransport` opens it through `openEventStream`
+ * (`shared/services/sse-client.ts`).
  */
 class ChatService {
   listModels(): Promise<ChatModel[]> {
@@ -82,6 +84,51 @@ class ChatService {
   async cancelRun(conversationId: string, runId: string): Promise<void> {
     await apiClient.post(API_ENDPOINTS.CHAT.CANCEL_RUN, undefined, {
       path: { conversation_id: conversationId, run_id: runId },
+    });
+  }
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+
+  /**
+   * Upload one file for the team (multipart field `file`). 400 `BAD_REQUEST` for an unsupported
+   * type or a file over the limit, 404 for a team the caller is not in. The attachment belongs
+   * to the uploader until a message claims it.
+   */
+  uploadAttachment(
+    teamId: string,
+    file: File,
+    { signal }: { signal?: AbortSignal } = {}
+  ): Promise<Attachment> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return apiClient.upload(API_ENDPOINTS.ATTACHMENTS.UPLOAD, form, {
+      path: { team_id: teamId },
+      signal,
+    });
+  }
+
+  /** The attachment's metadata; visible to every member of its team. */
+  getAttachment(attachmentId: string): Promise<Attachment> {
+    return apiClient.get(API_ENDPOINTS.ATTACHMENTS.ATTACHMENT, {
+      path: { attachment_id: attachmentId },
+    });
+  }
+
+  /** The stored bytes under their media type (bearer-protected: shown through an object URL). */
+  getAttachmentBlob(
+    attachmentId: string,
+    { signal }: { signal?: AbortSignal } = {}
+  ): Promise<Blob> {
+    return apiClient.blob(API_ENDPOINTS.ATTACHMENTS.CONTENT, {
+      path: { attachment_id: attachmentId },
+      signal,
+    });
+  }
+
+  /** Withdraw an upload that no message carries yet (409 once sent, 403 for another member's). */
+  async deleteAttachment(attachmentId: string): Promise<void> {
+    await apiClient.delete(API_ENDPOINTS.ATTACHMENTS.ATTACHMENT, {
+      path: { attachment_id: attachmentId },
     });
   }
 }

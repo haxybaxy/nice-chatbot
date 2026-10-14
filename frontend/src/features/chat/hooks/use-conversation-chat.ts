@@ -9,7 +9,13 @@ import { ApiError } from "@/shared/services/api-error";
 import { conversationQueryOptions, patchConversationCaches } from "./use-conversations";
 import { chatService } from "../services/chat.service";
 import { ConversationRunTransport } from "../services/conversation-run-transport";
-import type { ChatMessage, ConversationDetail, Run, RunRequestOptions } from "../types";
+import type {
+  ChatMessage,
+  ComposerSubmission,
+  ConversationDetail,
+  Run,
+  RunRequestOptions,
+} from "../types";
 import { toChatMessage } from "../utils/wire-parts";
 
 interface UseConversationChatOptions {
@@ -117,8 +123,14 @@ export function useConversationChat({ teamId, detail, getRunOptions }: UseConver
     }
   }, [transport, stopChat, cancelRun]);
 
+  // The SDK puts the file parts before the text; with no text it adds no text part at all.
+  // Resolves when the response has finished streaming (errors go to `onError`, not here).
   const { sendMessage } = chat;
-  const send = useCallback((text: string) => sendMessage({ text }), [sendMessage]);
+  const send = useCallback(
+    ({ text, files }: ComposerSubmission) =>
+      text ? sendMessage({ text, files }) : sendMessage({ files }),
+    [sendMessage]
+  );
 
   const { clearError, resumeStream } = chat;
   const reconnect = useCallback(() => {

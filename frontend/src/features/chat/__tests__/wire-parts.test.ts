@@ -29,6 +29,35 @@ describe("toChatMessage", () => {
     });
   });
 
+  it("maps a persisted file part to the SDK file part, the attachment id staying inside url", () => {
+    const message = toChatMessage(
+      makeMessage({
+        id: "m-u",
+        role: "user",
+        parts: [
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "photo.png",
+            url: "/api/attachments/att-1/content",
+            attachmentId: "att-1",
+          },
+          { type: "text", text: "see", state: "done" },
+        ],
+      })
+    );
+
+    expect(message.parts).toEqual([
+      {
+        type: "file",
+        mediaType: "image/png",
+        filename: "photo.png",
+        url: "/api/attachments/att-1/content",
+      },
+      { type: "text", text: "see", state: "done" },
+    ]);
+  });
+
   it("types a known tool whose payload matches its schema", () => {
     const message = assistant([
       {

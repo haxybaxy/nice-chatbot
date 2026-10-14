@@ -62,7 +62,17 @@ enforced by fallow boundaries (see Quality tooling notes).
   the list/detail caches in `onData`, invalidates both in `onFinish`, and refetches the
   persisted thread into `setMessages` when a resume finds no run (it finished while we were
   away). Nothing else reads or writes `useChat` state; the sidebar, the header and the next
-  mount all read the query caches.
+  mount all read the query caches. **Attachments** are uploaded by the composer before the
+  message (`useUploadAttachments`, one `AttachmentOut` per file; a refused file keeps the
+  composer as it was) and enter the thread as SDK `FileUIPart`s built from those rows
+  (`toFileUIPart`: `mediaType`, `filename`, `url`), so the optimistic user message and the
+  persisted one render through the same `FilePart`. The transport maps them back with the pure
+  `utils/message-parts.ts` (`toMessagePartsIn`: text → `TextPartIn`, file → `FilePartIn{type,
+attachmentId}` with the id read from `/api/attachments/{id}/content`; the request schema is
+  `extra="forbid"`, so nothing else goes); the new-conversation screen uses the same helper. The
+  composer owns its pending files (`useComposerAttachments`: picker, drop, paste, limits) because
+  the vendored `PromptInput` hands `onSubmit` data/blob URLs, not the `File`s a multipart body
+  needs.
 - **Only `apiClient` talks HTTP** — never raw `fetch`/`axios` in a feature (enforced: ESLint bans
   `axios` outside `api-client.ts` and the refresh call in `auth.service.ts`, which must bypass the
   interceptor). The client is **path-typed**: `apiClient.get(API_ENDPOINTS.USERS.ME)`,
@@ -73,6 +83,15 @@ enforced by fallow boundaries (see Quality tooling notes).
   Errors arrive as `ApiError` (`status`, `code` = the generated `ErrorCode`, `correlationId`,
   `detail` = the backend's `error` message; defined in `shared/services/api-error.ts`, re-exported
   by `api-client.ts`).
+  Two more shapes ride the same client: `apiClient.upload(path, formData, options)` for the
+  operations the spec declares as `multipart/form-data` (`FormPaths<"post">`; the field names are
+  `FormBody<P, "post">`, and the JSON verbs refuse those paths — today only the attachment upload)
+  and `apiClient.blob(path, options)` → `Blob` for the binary routes (`responseType: "blob"`).
+  **A bearer-protected binary is never a `src`/`href`**: fetch it through `blob`, show it through
+  `URL.createObjectURL`, and tie the URL's life to the query that holds it — see
+  `features/chat/hooks/use-attachments.ts` (`useAttachmentObjectUrl`: created in the `queryFn`,
+  `staleTime: Infinity`, revoked by one cache subscription per QueryClient when the query is
+  garbage-collected or removed).
   **The one exception is `text/event-stream`**: `shared/services/sse-client.ts` exports
   `openEventStream(path, { path, query, signal })` — path-typed like `apiClient.get`, same bearer
   header, pre-emptive refresh when the access token is expired, one refresh + retry on 401 and
@@ -147,8 +166,13 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   `controllableRunEvents()` returns `{ response, push, end, aborted }` for in-progress / aborted
   streams, and `mockRunEvents(path, resolver)` registers through a raw `http.get(url(path))`
   because `mockApi` types a response as the operation's JSON `*Out` schema (the contract
-  validator skips `text/event-stream` for the same reason). `setup.ts` stubs `ResizeObserver`,
-  `IntersectionObserver` and `Element.prototype.scrollTo` for the AI Elements, and holds the
+  validator skips `text/event-stream` for the same reason). The attachment content route is
+  binary and registers the same way (`mockAttachmentContent` + `attachmentContentResponse` in
+  `handlers/attachments.ts`); the upload handler is a plain `mockApi.post` reading
+  `request.formData()`. `setup.ts` stubs `ResizeObserver`,
+  `IntersectionObserver` and `Element.prototype.scrollTo` for the AI Elements, replaces
+  `URL.createObjectURL` / `revokeObjectURL` with deterministic `vi.fn`s (`blob:mock/<n>`; assert
+  on them with `vi.mocked`), and holds the
   only `vi.mock` in the suite — `shiki`, which is not HTTP (a no-highlight stub so code blocks
   render synchronously and offline). Everything HTTP stays MSW.
 - **Both directions of the contract are enforced** by `src/test/contract/` in `afterEach`:
