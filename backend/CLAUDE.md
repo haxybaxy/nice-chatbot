@@ -43,7 +43,7 @@ A domain directory contains exactly these entries (guard: no `service.py`, `util
 `app/core` (config, errors, logging, middleware, Cognito and SES mail adapters, JWT security,
 schema bases, OpenAPI helpers, the SSE response, the AI SDK chunk vocabulary in `ui_stream.py` /
 `ui_fold.py`, and the chat runtime: `llm/` (catalog + LangChain model builder), `tools/`, `agent/`
-(the LangGraph graph, stream mapper, checkpointer), `research/`, `search.py`, `sandbox.py`,
+(the LangGraph graph, stream mapper, checkpointer, and the worker's turn sink / mode assembly), `research/`, `search.py`, `sandbox.py`,
 `observability.py`, `prompts.py`), `app/db` (Base, engine, `get_db` + `session_scope`, the
 LISTEN/NOTIFY `listen.py`, model registry, DB settings, migrations), `app/api.py` (router
 composition + health), `app/main.py` (app factory), `app/worker.py` (the run worker). Nothing under
@@ -126,6 +126,23 @@ second method. (`tests/guards/test_use_cases.py`.)
   `run_control`). Every worker-side write is fenced by `worker_id` + `status = 'running'`; the
   `(run_id, seq)` unique constraint is the backstop. Persisted `message.parts` mirror the UI message
   shape (`fold_parts`), `provider_messages` keep the turn's LangChain messages verbatim.
+  The worker (`app/worker.py`) is one `Worker` over injected collaborators (`WorkerDeps`): a claim
+  loop (`ClaimRun` → one `RunAssistantTurn` task per run under `Semaphore(WORKER_CONCURRENCY)`;
+  idle → `LISTEN run_queue` bounded by `WORKER_POLL_INTERVAL_S`) plus a reaper task. SIGTERM/SIGINT
+  stop claiming and cancel the running turns — each closes its run (parts so far persisted, an
+  `error` chunk, `failed` "worker shutting down") within `WORKER_SHUTDOWN_GRACE_S` — then the
+  tracer, search client, checkpointer pool, listener and engine are shut. `RunAssistantTurn` is
+  the unit of work (`LoadTurn` in one scope → `SaveAssistantMessage` + `start{messageId}` →
+  `WatchRunLease` heartbeat → the title in the background → the chat or research graph from
+  `app/core/agent/turn_graphs.py` under `asyncio.timeout` → `TurnSink` batches + per-step upserts
+  → `FinishRun`); `message.parts` is always `fold_parts` of the whole event log, so the stream and
+  REST agree. Cancel: `run_control` wakes the heartbeat, the graph stops between chunks, `abort` +
+  `cancelled`. A lost lease (reaped, re-queued) ends the turn with no further write. Resume
+  (attempt 2): the LangGraph thread continues (`astream(None)`) when it holds a checkpoint,
+  `reset-step` is emitted only when the log ends inside a model step (a loss during a tool round
+  re-emits the tool outputs onto parts the client already has), sources are re-seeded from the
+  persisted `source-url` parts and usage/steps add on top of attempt 1; with no checkpoint
+  (`AGENT_CHECKPOINTER=none`) the run starts over.
 - **Dependencies**: `Annotated[T, Depends(fn)]` aliases named `*Dep`; every dependency —
   including pure factories — is `async def` (a sync dependency costs a threadpool hop per
   request). Validate in dependencies (`get_membership` resolves `{organization_id}` and 404s);
