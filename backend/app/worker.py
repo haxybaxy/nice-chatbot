@@ -6,9 +6,12 @@ One process, one :class:`Worker`: it claims queued runs from the ``run`` table (
 ``WORKER_POLL_INTERVAL_S``) when the queue is empty. A reaper task re-queues or fails runs whose
 worker stopped heartbeating (``ReapStaleRuns``) and deletes uploads never bound to a message
 (``ReapOrphanAttachments``). SIGTERM / SIGINT set the stop event: the loop
-stops claiming, running turns are cancelled and each one closes its run (partial message
-persisted, ``error`` chunk, ``failed`` "worker shutting down") within ``WORKER_SHUTDOWN_GRACE_S``;
-then the tracer, the search client, the checkpointer pool, the listener and the engine are shut.
+stops claiming, the reaper finishes the pass it is in and exits, running turns are cancelled and
+each one closes its run (partial message persisted, ``error`` chunk, ``failed`` "worker shutting
+down") within ``WORKER_SHUTDOWN_GRACE_S``; then the tracer, the search client, the checkpointer
+pool, the listener and the engine are shut. A stop only ever interrupts a wait (the slot, the
+listener, the reaper's sleep), never a database statement: a statement cancelled mid-flight
+leaves its connection invalid.
 
 Nothing under ``app/`` imports this module (guard); ``main`` is the only place the process-wide
 singletons (``default_*``) are assembled, so tests drive :class:`Worker` with fakes.
@@ -96,7 +99,9 @@ class Worker:
             while not self._stop.is_set():
                 await self._claim_once()
         finally:
-            reaper.cancel()
+            # Also when serve() itself was cancelled: the reaper watches the event, ends its current
+            # pass and exits on its own — it is never cancelled mid-statement.
+            self._stop.set()
             await asyncio.gather(reaper, return_exceptions=True)
             await self._drain()
 
@@ -141,8 +146,8 @@ class Worker:
         return pending in done and not pending.cancelled()
 
     async def _reap_forever(self) -> None:
-        while True:
-            await asyncio.sleep(self._options.reaper_interval_s)
+        """Every ``reaper_interval_s`` until the stop event: stale runs, then orphan attachments."""
+        while await self._until_stop(asyncio.sleep(self._options.reaper_interval_s)):
             try:
                 reaped = await self._reap.execute()
                 orphans = await self._reap_orphans.execute()

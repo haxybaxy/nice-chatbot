@@ -158,9 +158,12 @@ second method. (`tests/guards/test_use_cases.py`.)
   shape (`fold_parts`), `provider_messages` keep the turn's LangChain messages verbatim.
   The worker (`app/worker.py`) is one `Worker` over injected collaborators (`WorkerDeps`): a claim
   loop (`ClaimRun` → one `RunAssistantTurn` task per run under `Semaphore(WORKER_CONCURRENCY)`;
-  idle → `LISTEN run_queue` bounded by `WORKER_POLL_INTERVAL_S`) plus a reaper task. SIGTERM/SIGINT
-  stop claiming and cancel the running turns — each closes its run (parts so far persisted, an
-  `error` chunk, `failed` "worker shutting down") within `WORKER_SHUTDOWN_GRACE_S` — then the
+  idle → `LISTEN run_queue` bounded by `WORKER_POLL_INTERVAL_S`) plus a reaper task (`ReapStaleRuns`,
+  then `ReapOrphanAttachments`, every `WORKER_REAPER_INTERVAL_S`). SIGTERM/SIGINT stop claiming,
+  let the reaper finish its pass (a stop interrupts waits, never a database statement — a cancelled
+  statement invalidates its connection) and cancel the running turns — each closes its run (parts
+  so far persisted, an `error` chunk, `failed` "worker shutting down") within
+  `WORKER_SHUTDOWN_GRACE_S` — then the
   tracer, search client, checkpointer pool, listener and engine are shut. `RunAssistantTurn` is
   the unit of work (`LoadTurn` in one scope → `SaveAssistantMessage` + `start{messageId}` →
   `WatchRunLease` heartbeat → the title in the background → the chat or research graph from
