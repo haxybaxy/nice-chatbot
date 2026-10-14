@@ -14,7 +14,7 @@ dependencies = [
     "pydantic[email]>=2.13.5",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.0.52",
-    # Loaded by SQLAlchemy from the postgresql+psycopg:// URL; never imported → DEP002 ignore.
+    # The SQLAlchemy driver (postgresql+psycopg:// URL) and the LISTEN/NOTIFY connection (app/db/listen.py).
     "psycopg[binary]>=3.3.5",
     "alembic>=1.20.0",
     "structlog>=26.1.0",
@@ -213,11 +213,10 @@ exclude_also = [
 known_first_party = ["app", "tests"]
 
 [tool.deptry.per_rule_ignores]
-# Declared but never imported: uvicorn is the CLI entrypoint, psycopg is loaded via the DB URL,
-# langgraph-checkpoint-postgres is imported through the `langgraph` namespace.
+# Declared but never imported: uvicorn is the CLI entrypoint, langgraph-checkpoint-postgres is
+# imported through the `langgraph` namespace.
 DEP002 = [
     "uvicorn",
-    "psycopg",
     "langgraph-checkpoint-postgres",
     # PENDING (Phase 1/2 seams): imported by modules that land with the chat feature. Remove each
     # entry when its importer exists; the whole block goes before the feature is called done.

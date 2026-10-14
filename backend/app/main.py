@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logging_config import configure_logging, get_logger
 from app.core.middleware import RequestLoggingMiddleware
+from app.core.sse import UI_MESSAGE_STREAM_HEADER
+from app.db.listen import get_listener
 from app.db.session import async_session_maker, engine
 
 logger = get_logger(__name__)
@@ -28,6 +30,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         logger.warning("database unreachable at startup", error_type=type(error).__name__)
     logger.info("application started", environment=settings.environment)
     yield
+    await get_listener().stop()
     await engine.dispose()
 
 
@@ -48,7 +51,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Correlation-ID"],
+        expose_headers=["X-Correlation-ID", UI_MESSAGE_STREAM_HEADER],
     )
     # Added last so it is outermost: every request gets a correlation id before anything else.
     application.add_middleware(RequestLoggingMiddleware)
