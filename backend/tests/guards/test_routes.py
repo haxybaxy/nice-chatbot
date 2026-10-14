@@ -58,22 +58,29 @@ def test_every_dependency_is_async(routes: Routes) -> None:
     assert found == []
 
 
-def _is_event_stream(route: APIRoute) -> bool:
-    """SSE operations stream bytes; their event vocabulary is ``app/core/ui_stream.py``."""
+# The two non-JSON success responses: the SSE run event stream (``app/core/sse.py``, its event
+# vocabulary is ``app/core/ui_stream.py``) and the attachment download (``app/core/downloads.py``,
+# the stored bytes under their own media type). Both are ``StreamingResponse`` subclasses whose
+# class-level ``media_type`` is one of these; their error responses are still the JSON envelope.
+BYTE_STREAM_MEDIA_TYPES = {"text/event-stream", "application/octet-stream"}
+
+
+def _is_byte_stream(route: APIRoute) -> bool:
     response_class: object = route.response_class
     return (
         isinstance(response_class, type)
         and issubclass(response_class, StreamingResponse)
-        and response_class.media_type == "text/event-stream"
+        and response_class.media_type in BYTE_STREAM_MEDIA_TYPES
     )
 
 
 def test_response_models_are_out_schemas(routes: Routes) -> None:
-    """Every operation serializes through a ``BaseSchemaOut`` (or a list of one), except 204s and SSE."""
+    """Every operation serializes through a ``BaseSchemaOut`` (or a list of one), except 204s and
+    the byte streams (SSE, attachment content)."""
     found: list[str] = []
     for ctx, route in routes:
         model: object = route.response_model
-        if _is_event_stream(route):
+        if _is_byte_stream(route):
             continue
         if route.status_code == 204:
             if model is not None:

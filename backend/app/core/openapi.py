@@ -55,9 +55,10 @@ def _error_contents(spec: JsonObject) -> list[JsonObject]:
 def json_error_envelopes(spec: JsonObject) -> JsonObject:
     """Document every error response as ``application/json``, whatever the success media type.
 
-    FastAPI files additional responses under the route's ``response_class.media_type``, so an
-    event-stream operation would advertise the envelope as ``text/event-stream``. The exception
-    handlers always answer with JSON; the document says so. In place and idempotent.
+    FastAPI files additional responses under the route's ``response_class.media_type``, so the
+    event-stream operation would advertise the envelope as ``text/event-stream`` and the attachment
+    download as ``application/octet-stream``. The exception handlers always answer with JSON; the
+    document says so. In place and idempotent.
     """
     for content in _error_contents(spec):
         for media_type in [name for name in content if name != _JSON]:

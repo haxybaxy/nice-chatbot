@@ -1,11 +1,13 @@
 """Seed helpers: async, take the session first, flush, return the model."""
 
+import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.models import AttachmentBlobModel, AttachmentKind, AttachmentModel
 from app.auth.models import PasswordResetTokenModel
 from app.chat.models import (
     ConversationModel,
@@ -184,3 +186,42 @@ async def seed_run_events(db: AsyncSession, run: RunModel, chunks: Sequence[UICh
     await db.flush()
     await db.refresh(run)
     return events
+
+
+async def seed_attachment(
+    db: AsyncSession,
+    *,
+    team: TeamModel,
+    uploader: UserModel,
+    filename: str = "notes.txt",
+    media_type: str = "text/plain",
+    kind: AttachmentKind = AttachmentKind.TEXT,
+    data: bytes = b"hello from notes",
+    extracted_text: str | None = "hello from notes",
+    extraction_error: str | None = None,
+    message: MessageModel | None = None,
+    created_at: datetime | None = None,
+) -> AttachmentModel:
+    """An upload in ``team`` by ``uploader`` with its bytes; bound to ``message`` when given,
+    otherwise an orphan (``created_at`` ages it for the reaper)."""
+    attachment = AttachmentModel(
+        team_id=team.id,
+        uploaded_by=uploader.id,
+        message_id=message.id if message is not None else None,
+        filename=filename,
+        media_type=media_type,
+        size_bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        kind=kind.value,
+        extracted_text=extracted_text,
+        text_chars=len(extracted_text) if extracted_text is not None else None,
+        extraction_error=extraction_error,
+    )
+    if created_at is not None:
+        attachment.created_at = created_at
+    db.add(attachment)
+    await db.flush()
+    db.add(AttachmentBlobModel(attachment_id=attachment.id, data=data))
+    await db.flush()
+    await db.refresh(attachment)
+    return attachment

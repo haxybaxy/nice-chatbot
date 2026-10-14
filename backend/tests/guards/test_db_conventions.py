@@ -9,6 +9,7 @@ from enum import StrEnum
 import pytest
 from sqlalchemy import CheckConstraint, Date, DateTime
 
+from app.attachments.models import AttachmentKind
 from app.chat.models import ConversationVisibility, MessageRole, RunMode, RunStatus
 from app.db.base import NAMING_CONVENTION, Base
 from app.db.registry import register_all_models
@@ -89,6 +90,7 @@ ENUM_CHECKS: list[tuple[str, str, type[StrEnum]]] = [
     ("message", "role", MessageRole),
     ("run", "status", RunStatus),
     ("run", "mode", RunMode),
+    ("attachment", "kind", AttachmentKind),
 ]
 
 

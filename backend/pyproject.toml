@@ -32,6 +32,11 @@ dependencies = [
     "langfuse>=5,<6",
     "httpx>=0.28.1",
     "openai>=3.31,<4",
+    # Attachments: multipart uploads (loaded by FastAPI, never imported → deptry DEP002 ignore),
+    # PDF and DOCX text extraction at upload time.
+    "python-multipart>=0.0.32",
+    "pypdf>=6.20.1",
+    "python-docx>=1.2.0",
 ]
 
 [build-system]
@@ -214,10 +219,12 @@ known_first_party = ["app", "tests"]
 
 [tool.deptry.per_rule_ignores]
 # Declared but never imported: uvicorn is the CLI entrypoint, langgraph-checkpoint-postgres is
-# imported through the `langgraph` namespace.
+# imported through the `langgraph` namespace, python-multipart is loaded by FastAPI to parse the
+# attachment upload form (`UploadFile`).
 DEP002 = [
     "uvicorn",
     "langgraph-checkpoint-postgres",
+    "python-multipart",
 ]
 
 # ── vulture ──────────────────────────────────────────────────────────────────
@@ -263,6 +270,7 @@ ignore_names = [
     "tier",
     "supports_tools",
     "supports_reasoning",
+    "supports_vision",
     # called from outside app/ (alembic env, tests)
     "register_all_models",
     "lifespan",

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
+from app.attachments.router import router as attachments_router
 from app.auth.router import router as auth_router
 from app.chat.router import router as chat_router
 from app.core.config import settings
@@ -16,7 +17,14 @@ from app.users.router import router as users_router
 api_router = APIRouter()
 # Any domain route can hit an unhandled error (500) or an unavailable dependency (503: database,
 # Cognito). The health probes are exempt: liveness is always 200, readiness documents its own 503.
-for domain_router in (auth_router, users_router, organizations_router, teams_router, chat_router):
+for domain_router in (
+    auth_router,
+    users_router,
+    organizations_router,
+    teams_router,
+    chat_router,
+    attachments_router,
+):
     api_router.include_router(domain_router, responses=error_responses(500, 503))
 
 

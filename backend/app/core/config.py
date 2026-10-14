@@ -13,6 +13,7 @@ without the Cognito variables and the AWS adapters never see the database URL.
   deliberately not environment-configurable, so it has no ``.env`` lines
 - :class:`DatabaseSettings` → ``db_settings`` (``app/db/config.py``): URL and pool sizing
 - :class:`ChatSettings` / :class:`WorkerSettings`: run limits and the worker loop
+- :class:`AttachmentSettings` → ``attachment_settings``: upload size, per-message count, text caps, orphan TTL
 - :class:`LlmSettings` / :class:`AgentSettings`: model providers, allowlist, agent budgets
 - :class:`SearchSettings` / :class:`SandboxSettings` / :class:`ResearchSettings`: tools and deep research
 - :class:`LangfuseSettings` → ``langfuse_settings``: tracing (no-op when unset)
@@ -203,6 +204,23 @@ class WorkerSettings(BaseSettings):
     worker_shutdown_grace_s: int = 20
 
 
+class AttachmentSettings(BaseSettings):
+    """File attachments on chat messages: upload limits, what is extracted and kept, and how much of
+    it a model sees in one turn."""
+
+    model_config: ClassVar[SettingsConfigDict] = settings_config()
+
+    # Largest accepted upload; the request is read in chunks and refused past this point.
+    attachment_max_bytes: int = 10_485_760
+    attachment_max_per_message: int = 5
+    # Extracted text kept per attachment (`text_chars` still records the full count).
+    attachment_max_extracted_chars: int = 200_000
+    # Attachment text injected into one model turn, across every attachment in the history window.
+    attachment_model_text_chars: int = 60_000
+    # Uploads never attached to a message are swept by the worker's reaper after this long.
+    attachment_orphan_ttl_hours: int = 24
+
+
 class LlmSettings(BaseSettings):
     """Model providers and the model allowlist.
 
@@ -236,6 +254,9 @@ class LlmSettings(BaseSettings):
     # Capabilities of the OpenAI-compatible server (one server, one setting each).
     llm_openai_supports_tools: bool = True
     llm_openai_supports_reasoning: bool = False
+    # Whether it accepts image content blocks (Claude always does); without it, attached images
+    # reach the model as a text placeholder.
+    llm_openai_supports_vision: bool = False
     llm_openai_parallel_tool_calls: bool = False
     # vLLM/Ollama accept `max_tokens`; api.openai.com wants `max_completion_tokens`.
     llm_openai_max_tokens_param: Literal["max_completion_tokens", "max_tokens"] = "max_completion_tokens"
@@ -368,6 +389,7 @@ cognito_settings = CognitoSettings()  # pyright: ignore[reportCallIssue]
 mail_settings = MailSettings()
 chat_settings = ChatSettings()
 worker_settings = WorkerSettings()
+attachment_settings = AttachmentSettings()
 llm_settings = LlmSettings()
 agent_settings = AgentSettings()
 search_settings = SearchSettings()
