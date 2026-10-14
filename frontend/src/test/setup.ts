@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
 import { tokenStorage } from "@/shared/services/token-storage";
@@ -6,6 +7,10 @@ import { tokenStorage } from "@/shared/services/token-storage";
 import { assertNoContractViolations, installContractValidation } from "./contract/install";
 import { server } from "./msw/server";
 
+// The integration tests render the whole app (lazy routes, Suspense, MSW, markdown). Under load
+// (parallel workers, a cold cache) a `findBy*` can legitimately take more than the library's
+// 1 s default, which showed up as a flaky "Unable to find …" across unrelated files.
+configure({ asyncUtilTimeout: 5000 });
 // The one sanctioned `vi.mock`, and the one that is not HTTP (everything HTTP is MSW): shiki
 // loads grammars + a WASM engine, which is slow and flaky under jsdom and irrelevant to what a
 // test asserts. `ai-elements/code-block.tsx` calls `createHighlighter(...).codeToTokens(...)`;

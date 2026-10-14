@@ -11,6 +11,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Integration tests wait up to 5 s per findBy (src/test/setup.ts); leave headroom.
+    testTimeout: 15_000,
     globals: true,
     environment: "jsdom",
     css: false,
