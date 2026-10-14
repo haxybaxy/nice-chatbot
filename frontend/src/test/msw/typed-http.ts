@@ -16,8 +16,10 @@ const BASE = API_ENDPOINTS.EXTERNAL.BACKEND;
 /**
  * Absolute URL for a spec path in MSW's `:param` syntax:
  * `/api/organizations/{organization_id}` -> `http://…/api/organizations/:organization_id`.
+ * Exported for the one raw `http.get` the event-stream mocks need (`sse.ts`); JSON handlers go
+ * through `mockApi` below.
  */
-function url(path: ApiPath): string {
+export function url(path: ApiPath): string {
   return `${BASE}${path.replace(/\{([^}]+)\}/g, ":$1")}`;
 }
 

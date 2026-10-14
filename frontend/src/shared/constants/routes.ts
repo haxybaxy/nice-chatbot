@@ -13,8 +13,11 @@ export const ROUTES = {
     resetPassword: "/auth/reset-password",
   },
 
-  // App (protected)
+  // App (protected). `/app` redirects to the last (else first) team's chat.
   app: {
     root: "/app",
+    teamChat: (teamId: string) => `/app/teams/${teamId}/chat`,
+    conversation: (teamId: string, conversationId: string) =>
+      `/app/teams/${teamId}/chat/${conversationId}`,
   },
 } as const;

@@ -1,10 +1,36 @@
 import "@testing-library/jest-dom/vitest";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
 import { tokenStorage } from "@/shared/services/token-storage";
 
 import { assertNoContractViolations, installContractValidation } from "./contract/install";
 import { server } from "./msw/server";
+
+// The one sanctioned `vi.mock`, and the one that is not HTTP (everything HTTP is MSW): shiki
+// loads grammars + a WASM engine, which is slow and flaky under jsdom and irrelevant to what a
+// test asserts. `ai-elements/code-block.tsx` calls `createHighlighter(...).codeToTokens(...)`;
+// the stub answers with one plain token per line, i.e. the same shape it renders before shiki
+// has loaded, so a code block's text is in the DOM synchronously.
+vi.mock("shiki", () => {
+  const escapeHtml = (text: string) =>
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const plainTokens = (code: string) => ({
+    bg: "transparent",
+    fg: "inherit",
+    tokens: code
+      .split("\n")
+      .map((line) => (line === "" ? [] : [{ content: line, color: "inherit", offset: 0 }])),
+  });
+  return {
+    codeToHtml: (code: string) => Promise.resolve(`<pre><code>${escapeHtml(code)}</code></pre>`),
+    createHighlighter: () =>
+      Promise.resolve({
+        getLoadedLanguages: () => [],
+        codeToTokens: (code: string) => plainTokens(code),
+        codeToHtml: (code: string) => `<pre><code>${escapeHtml(code)}</code></pre>`,
+      }),
+  };
+});
 
 // Node 22.4+ ships an experimental global `localStorage`/`sessionStorage` that is inert
 // (reads throw) unless the process is launched with `--localstorage-file`, and it shadows
@@ -76,6 +102,34 @@ if (!Element.prototype.releasePointerCapture) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
+
+// jsdom has neither observer; the AI Elements need both (`use-stick-to-bottom` measures the
+// thread with ResizeObserver, Radix / the conversation scroll button use IntersectionObserver).
+// No-op classes: nothing observes, nothing fires, layout-driven behaviour is simply inert.
+class NoopObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  takeRecords(): never[] {
+    return [];
+  }
+}
+
+function installObserver(name: "ResizeObserver" | "IntersectionObserver"): void {
+  if (name in globalThis) return;
+  Object.defineProperty(globalThis, name, {
+    value: NoopObserver,
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(window, name, { value: NoopObserver, configurable: true, writable: true });
+}
+
+installObserver("ResizeObserver");
+installObserver("IntersectionObserver");
 
 beforeAll(() => {
   // Every endpoint a test hits needs a handler in src/test/msw/ — an unhandled request fails
