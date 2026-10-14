@@ -8,6 +8,9 @@ so Claude sees its own thinking and tool history (also across Claude models); re
 provider rebuilds neutral ``AIMessage`` / ``ToolMessage`` pairs from ``parts`` with the reasoning
 dropped. Histories are append-only: nothing here rewrites what a previous turn stored.
 
+A user row is its text, or — when it carries attachments — a list of content blocks built by
+``app/core/llm/attachments.py`` (text, ``<attachment>`` blocks, image blocks for vision models).
+
 :class:`StoredMessage` is the small read model this module needs; the chat domain maps its ORM
 rows onto it so the LLM layer never imports a domain model.
 """
@@ -25,8 +28,9 @@ from typing import Literal, cast
 
 from langchain_core._api import LangChainBetaWarning
 from langchain_core.load import dumpd, load
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
+from app.core.llm.attachments import StoredAttachment, text_budgets, user_message
 from app.core.llm.catalog import ModelSpec
 from app.core.ui_stream import TOOL_PREFIX, JsonObject
 
@@ -43,6 +47,8 @@ class StoredMessage:
     provider: str | None = None
     model: str | None = None
     provider_messages: Sequence[JsonObject] | None = None
+    # User rows: the files attached to the message, in the order of its ``file`` parts.
+    attachments: Sequence[StoredAttachment] = ()
 
 
 def text_of_parts(parts: Sequence[JsonObject]) -> str:
@@ -141,11 +147,17 @@ def _repair(messages: list[BaseMessage]) -> list[BaseMessage]:
 def to_langchain(rows: Sequence[StoredMessage], target: ModelSpec) -> list[BaseMessage]:
     """The messages to send to ``target`` for a conversation, oldest first."""
     messages: list[BaseMessage] = []
-    for row in rows:
+    budgets = text_budgets([row.attachments if row.role == "user" else () for row in rows])
+    for index, row in enumerate(rows):
         if row.role == "user":
-            text = text_of_parts(row.parts)
-            if text:
-                messages.append(HumanMessage(content=text))
+            human = user_message(
+                text_of_parts(row.parts),
+                row.attachments,
+                budgets=budgets[index],
+                supports_vision=target.supports_vision,
+            )
+            if human is not None:
+                messages.append(human)
         elif row.provider == target.provider and row.provider_messages:
             messages.extend(_load_turn(row.provider_messages))
         else:

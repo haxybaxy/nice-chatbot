@@ -54,6 +54,7 @@ CATALOG = ModelCatalog(
     openai_configured=True,
     openai_supports_tools=True,
     openai_supports_reasoning=False,
+    openai_supports_vision=False,
 )
 OPUS = CATALOG.get("anthropic:claude-opus-5-5")
 SONNET = CATALOG.get("anthropic:claude-sonnet-5-5")

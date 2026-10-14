@@ -36,9 +36,10 @@ from app.chat.schemas import (
     CreateMessageIn,
     ModelOut,
     RunOut,
+    TextPartIn,
     UpdateConversationIn,
 )
-from app.chat.use_cases.create_message import NewMessage
+from app.chat.use_cases.create_message import NewFilePart, NewMessage, NewTextPart
 from app.chat.use_cases.get_conversation import ConversationDetail
 from app.chat.use_cases.list_conversations import ConversationPage
 from app.core.llm.catalog import ModelSpec
@@ -61,13 +62,14 @@ _EVENT_STREAM_DESCRIPTION = (
     response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
     summary="Create a conversation",
-    responses=error_responses(400, 404, 422),
+    responses=error_responses(400, 404, 409, 422),
 )
 async def create_conversation(
     body: CreateConversationIn, membership: TeamAccessDep, use_case: CreateConversationDep
 ) -> ConversationModel:
     """With `message`, the first user message is stored and its run queued in the same transaction
-    (`activeRun` is set on the response); 400 names an unknown model."""
+    (`activeRun` is set on the response); 400 names an unknown model. File parts follow the rules
+    of `POST …/messages` (404 for an attachment that is not yours here, 409 for one already sent)."""
     first = body.message
     return await use_case.execute(
         team_id=membership.team_id,
@@ -77,7 +79,12 @@ async def create_conversation(
         message=None
         if first is None
         else NewMessage(
-            texts=tuple(part.text for part in first.parts),
+            parts=tuple(
+                NewTextPart(text=part.text)
+                if isinstance(part, TextPartIn)
+                else NewFilePart(attachment_id=part.attachment_id)
+                for part in first.parts
+            ),
             model=first.model,
             mode=first.mode,
             web_search=first.tools.web_search,
@@ -157,9 +164,16 @@ async def create_message(
     body: CreateMessageIn, conversation: ConversationAccessDep, current_user: CurrentUserDep, use_case: CreateMessageDep
 ) -> RunModel:
     """Stores the user message and queues the assistant's run (returned). 409 while a run is
-    active in the conversation; 400 names an unknown model."""
+    active in the conversation; 400 names an unknown model. File parts name your own unsent
+    uploads in this team (404 otherwise; 409 once already part of a message; 400 over the
+    per-message limit or listed twice); they are persisted as `file` parts with the content URL."""
     message = NewMessage(
-        texts=tuple(part.text for part in body.parts),
+        parts=tuple(
+            NewTextPart(text=part.text)
+            if isinstance(part, TextPartIn)
+            else NewFilePart(attachment_id=part.attachment_id)
+            for part in body.parts
+        ),
         model=body.model,
         mode=body.mode,
         web_search=body.tools.web_search,

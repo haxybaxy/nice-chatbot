@@ -29,6 +29,8 @@ class ModelSpec:
     tier: Tier
     supports_tools: bool
     supports_reasoning: bool
+    # Accepts image content blocks; without it attached images become a text placeholder.
+    supports_vision: bool
     # List prices (Anthropic first-party rates), None when unknown — cost estimates only.
     input_usd_per_mtok: float | None
     output_usd_per_mtok: float | None
@@ -74,6 +76,7 @@ class ModelCatalog:
         openai_configured: bool,
         openai_supports_tools: bool,
         openai_supports_reasoning: bool,
+        openai_supports_vision: bool,
     ) -> None:
         self._configured: dict[LlmProvider, bool] = {"anthropic": anthropic_configured, "openai": openai_configured}
         self._specs: dict[str, ModelSpec] = {}
@@ -89,6 +92,7 @@ class ModelCatalog:
                     tier=known.tier if known else "balanced",
                     supports_tools=True,
                     supports_reasoning=True,
+                    supports_vision=True,
                     input_usd_per_mtok=known.input_usd if known else None,
                     output_usd_per_mtok=known.output_usd if known else None,
                     cache_read_multiplier=known.cache_read_multiplier if known else 0.1,
@@ -103,6 +107,7 @@ class ModelCatalog:
                     tier="balanced",
                     supports_tools=openai_supports_tools,
                     supports_reasoning=openai_supports_reasoning,
+                    supports_vision=openai_supports_vision,
                     input_usd_per_mtok=None,
                     output_usd_per_mtok=None,
                     cache_read_multiplier=1.0,
@@ -170,4 +175,5 @@ def model_catalog() -> ModelCatalog:
         openai_configured=llm_settings.openai_configured,
         openai_supports_tools=llm_settings.llm_openai_supports_tools,
         openai_supports_reasoning=llm_settings.llm_openai_supports_reasoning,
+        openai_supports_vision=llm_settings.llm_openai_supports_vision,
     )

@@ -6,13 +6,13 @@ rebuilt from a replayed stream are identical. Part dicts carry the wire keys alr
 (``sourceId``, ``toolCallId``); the alias generator maps them to the snake_case fields.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self, cast
 from uuid import UUID
 
-from pydantic import Discriminator, Field, Tag
+from pydantic import Discriminator, Field, Tag, model_validator
 
 from app.chat.models import ConversationVisibility, MessageRole, RunMode, RunStatus
-from app.core.config import Effort, LlmProvider
+from app.core.config import Effort, LlmProvider, attachment_settings
 from app.core.llm.catalog import Tier
 from app.core.schemas import BaseSchema, BaseSchemaOut, UtcDatetime, type_tag
 
@@ -44,6 +44,17 @@ class SourceUrlPartOut(BaseSchemaOut):
     title: str | None = None
 
 
+class FilePartOut(BaseSchemaOut):
+    """An attachment on a user message (the AI SDK ``FileUIPart`` shape plus the attachment id);
+    ``url`` is ``/api/attachments/{attachmentId}/content``."""
+
+    type: Literal["file"]
+    media_type: str
+    filename: str
+    url: str
+    attachment_id: UUID
+
+
 class ToolPartOut(BaseSchemaOut):
     """``tool-<name>``: a tool call with its input and, once run, its output or error."""
 
@@ -68,6 +79,7 @@ type MessagePartOut = Annotated[
     | Annotated[ReasoningPartOut, Tag("reasoning")]
     | Annotated[StepStartPartOut, Tag("step-start")]
     | Annotated[SourceUrlPartOut, Tag("source-url")]
+    | Annotated[FilePartOut, Tag("file")]
     | Annotated[ToolPartOut, Tag("tool")]
     | Annotated[DataPartOut, Tag("data")],
     Discriminator(type_tag({"tool-": "tool", "data-": "data"})),
@@ -150,6 +162,7 @@ class ModelOut(BaseSchemaOut):
     tier: Tier
     supports_tools: bool
     supports_reasoning: bool
+    supports_vision: bool
     is_default: bool
 
 
@@ -158,7 +171,29 @@ class ModelOut(BaseSchemaOut):
 
 class TextPartIn(BaseSchema):
     type: Literal["text"] = "text"
-    text: str = Field(min_length=1, max_length=32_000)
+    # May be empty when the message carries a file part (see `CreateMessageIn`).
+    text: str = Field(max_length=32_000)
+
+
+class FilePartIn(BaseSchema):
+    """An upload (``POST /api/teams/{team_id}/attachments``) of the sender's, in this team and not
+    yet part of a message, to bind to this message."""
+
+    type: Literal["file"]
+    attachment_id: UUID
+
+
+def _in_part_tag(value: object) -> str | None:
+    """``type`` of an input part; a part without one is a text part (the original wire shape)."""
+    if isinstance(value, dict):
+        return str(cast("dict[str, object]", value).get("type", "text"))
+    return str(getattr(value, "type", "text"))
+
+
+type MessagePartIn = Annotated[
+    Annotated[TextPartIn, Tag("text")] | Annotated[FilePartIn, Tag("file")], Discriminator(_in_part_tag)
+]
+MAX_TEXT_PARTS = 8
 
 
 class RunOptionsIn(BaseSchema):
@@ -168,11 +203,22 @@ class RunOptionsIn(BaseSchema):
 
 
 class CreateMessageIn(BaseSchema):
-    parts: list[TextPartIn] = Field(min_length=1, max_length=8)
+    # Text parts and, per attachment, a file part; at most ATTACHMENT_MAX_PER_MESSAGE of the latter
+    # (checked when the message is created, 400).
+    parts: list[MessagePartIn] = Field(
+        min_length=1, max_length=MAX_TEXT_PARTS + attachment_settings.attachment_max_per_message
+    )
     # A catalog id ("anthropic:claude-opus-5-5"); the catalog default when omitted.
     model: str | None = Field(default=None, max_length=100)
     mode: RunMode = RunMode.CHAT
     tools: RunOptionsIn = Field(default_factory=RunOptionsIn)
+
+    @model_validator(mode="after")
+    def _has_content(self) -> Self:
+        # Whitespace-only text is stripped to "" by the base config, so this also rejects blank messages.
+        if not any(isinstance(part, FilePartIn) or part.text for part in self.parts):
+            raise ValueError("a message needs some text or an attachment")
+        return self
 
 
 class CreateConversationIn(BaseSchema):

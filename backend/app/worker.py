@@ -4,7 +4,8 @@ One process, one :class:`Worker`: it claims queued runs from the ``run`` table (
 ``FOR UPDATE SKIP LOCKED``), drives each through ``RunAssistantTurn`` as its own task — at most
 ``WORKER_CONCURRENCY`` at a time — and sleeps on ``LISTEN run_queue`` (bounded by
 ``WORKER_POLL_INTERVAL_S``) when the queue is empty. A reaper task re-queues or fails runs whose
-worker stopped heartbeating (``ReapStaleRuns``). SIGTERM / SIGINT set the stop event: the loop
+worker stopped heartbeating (``ReapStaleRuns``) and deletes uploads never bound to a message
+(``ReapOrphanAttachments``). SIGTERM / SIGINT set the stop event: the loop
 stops claiming, running turns are cancelled and each one closes its run (partial message
 persisted, ``error`` chunk, ``failed`` "worker shutting down") within ``WORKER_SHUTDOWN_GRACE_S``;
 then the tracer, the search client, the checkpointer pool, the listener and the engine are shut.
@@ -22,6 +23,7 @@ import socket
 from collections.abc import Awaitable
 from dataclasses import dataclass
 
+from app.attachments.use_cases.reap_orphan_attachments import ReapOrphanAttachments
 from app.chat.use_cases.claim_run import ClaimRun
 from app.chat.use_cases.reap_stale_runs import ReapStaleRuns
 from app.chat.use_cases.run_assistant_turn import RunAssistantTurn
@@ -73,6 +75,7 @@ class Worker:
         self._options = options
         self._claim = ClaimRun(deps.sessions)
         self._reap = ReapStaleRuns(deps.sessions)
+        self._reap_orphans = ReapOrphanAttachments(deps.sessions)
         self._turn = RunAssistantTurn(
             deps.sessions,
             deps.llm,
@@ -142,11 +145,14 @@ class Worker:
             await asyncio.sleep(self._options.reaper_interval_s)
             try:
                 reaped = await self._reap.execute()
+                orphans = await self._reap_orphans.execute()
             except Exception as error:  # noqa: BLE001 — the reaper must outlive a database hiccup
                 logger.warning("reaper failed", error_type=type(error).__name__)
                 continue
             if reaped:
                 logger.warning("reaped stale runs", count=reaped)
+            if orphans:
+                logger.info("swept orphan attachments", count=orphans)
 
     async def _drain(self) -> None:
         """Cancel the running turns and give each ``shutdown_grace_s`` to close its run."""

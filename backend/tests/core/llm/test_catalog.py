@@ -18,6 +18,7 @@ def _catalog(*, anthropic: bool = True, openai: bool = False) -> ModelCatalog:
         openai_configured=openai,
         openai_supports_tools=False,
         openai_supports_reasoning=False,
+        openai_supports_vision=False,
     )
 
 

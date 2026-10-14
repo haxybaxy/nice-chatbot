@@ -480,7 +480,7 @@ class TestCreateMessage:
     ) -> None:
         authenticate_as(owner)
 
-        response = await client.post(f"/api/conversations/{conversation.id}/messages", json={"parts": [TEXT] * 9})
+        response = await client.post(f"/api/conversations/{conversation.id}/messages", json={"parts": [TEXT] * 14})
 
         assert response.status_code == 422
 
@@ -741,6 +741,7 @@ class TestListModels:
             "tier": "frontier",
             "supportsTools": True,
             "supportsReasoning": True,
+            "supportsVision": True,
             "isDefault": True,
         }
 
