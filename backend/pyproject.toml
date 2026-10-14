@@ -133,10 +133,10 @@ known-first-party = ["app", "tests"]
 "sqlalchemy.orm.Session".msg = "Async only: sqlalchemy.ext.asyncio.AsyncSession via DbDep"
 "sqlalchemy.orm.sessionmaker".msg = "Async only: app.db.session.async_session_maker"
 "boto3".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
-"anthropic".msg = "Never import the Anthropic SDK directly: models come from app.core.llm.models (langchain-anthropic)"
-"openai".msg = "Only app/core/llm/errors.py imports the openai SDK (exception translation); models come from app.core.llm.models"
-"langchain_anthropic".msg = "Chat models are built only in app/core/llm/models.py (build_chat_model)"
-"langchain_openai".msg = "Chat models are built only in app/core/llm/models.py (build_chat_model); Claude never goes through ChatOpenAI"
+"anthropic".msg = "Never import the Anthropic SDK directly: models come from app.core.llm.chat_models (langchain-anthropic)"
+"openai".msg = "Only app/core/llm/errors.py imports the openai SDK (exception translation); models come from app.core.llm.chat_models"
+"langchain_anthropic".msg = "Chat models are built only in app/core/llm/chat_models.py (build_chat_model)"
+"langchain_openai".msg = "Chat models are built only in app/core/llm/chat_models.py (build_chat_model); Claude never goes through ChatOpenAI"
 "langfuse".msg = "Tracing is reached only through the Tracer in app/core/observability.py"
 "langgraph.checkpoint.postgres".msg = "The checkpointer lives only in app/core/agent/checkpointer.py"
 "botocore".msg = "AWS is reached only through the adapters in app/core: CognitoClient (cognito.py) and MailClient (mail.py)"
@@ -218,16 +218,6 @@ known_first_party = ["app", "tests"]
 DEP002 = [
     "uvicorn",
     "langgraph-checkpoint-postgres",
-    # PENDING (Phase 1/2 seams): imported by modules that land with the chat feature. Remove each
-    # entry when its importer exists; the whole block goes before the feature is called done.
-    "langgraph",
-    "langchain-core",
-    "langchain-anthropic",
-    "langchain-openai",
-    "psycopg-pool",
-    "langfuse",
-    "httpx",
-    "openai",
 ]
 
 # ── vulture ──────────────────────────────────────────────────────────────────
