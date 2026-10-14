@@ -49,6 +49,8 @@ describe("generated API type helpers", () => {
 
   it("lists the paths per verb from the generator's `?: never` emission", () => {
     expectTypeOf<PathsWith<"get">>().toEqualTypeOf<
+      | "/api/attachments/{attachment_id}"
+      | "/api/attachments/{attachment_id}/content"
       | "/api/chat/models"
       | "/api/conversations/{conversation_id}"
       | "/api/conversations/{conversation_id}/runs/active"

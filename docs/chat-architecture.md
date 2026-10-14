@@ -63,6 +63,21 @@ streamed once as a `source-url` part. Deep research is a mode: a planner, parall
 the cheaper sibling model, a synthesized report with `[n]` and a confidence & gaps section, and
 a citation check, all reported through `data-research-*` parts.
 
+## Attachments
+
+Files are uploaded per team (`POST /api/teams/{id}/attachments`, multipart field `file`, up to
+`ATTACHMENT_MAX_BYTES`) before the message that references them; the bytes live in the
+`attachment_blob` table (the repository's `put_blob`/`get_blob` pair is the seam an S3 adapter
+replaces later) and text is extracted once at upload (PDF via pypdf, Word via python-docx, text
+and code files decoded; failures are recorded, never fatal). A message claims attachments through
+`file` parts (`{type: "file", attachmentId}`, at most `ATTACHMENT_MAX_PER_MESSAGE`); the persisted
+part carries `mediaType`, `filename`, `url` (`/api/attachments/{id}/content`, bearer-protected, so
+the SPA fetches it and shows an object URL) and `attachmentId`. In the worker, images become
+native image blocks on vision-capable models (a placeholder sentence otherwise) and every other
+file becomes an `<attachment name="…" type="…">` block of its extracted text, capped per turn by
+`ATTACHMENT_MODEL_TEXT_CHARS`. Attachments never claimed by a message are swept by the worker's
+reaper after `ATTACHMENT_ORPHAN_TTL_HOURS`.
+
 ## Observability
 
 Langfuse's LangChain callback handler runs under the per-run root span; tools open nested spans

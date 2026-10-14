@@ -4,6 +4,47 @@
  */
 
 export interface paths {
+    "/api/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an attachment's metadata
+         * @description Visible to every member of the attachment's team.
+         */
+        get: operations["get_attachment_api_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an unsent attachment
+         * @description Only the uploader (403 otherwise), and only before a message carries it (409 after).
+         */
+        delete: operations["delete_attachment_api_attachments__attachment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attachments/{attachment_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download an attachment's content */
+        get: operations["get_attachment_content_api_attachments__attachment_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/forgot-password": {
         parameters: {
             query?: never;
@@ -182,7 +223,9 @@ export interface paths {
         /**
          * Send a message
          * @description Stores the user message and queues the assistant's run (returned). 409 while a run is
-         *     active in the conversation; 400 names an unknown model.
+         *     active in the conversation; 400 names an unknown model. File parts name your own unsent
+         *     uploads in this team (404 otherwise; 409 once already part of a message; 400 over the
+         *     per-message limit or listed twice); they are persisted as `file` parts with the content URL.
          */
         post: operations["create_message_api_conversations__conversation_id__messages_post"];
         delete?: never;
@@ -444,6 +487,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/teams/{team_id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an attachment
+         * @description Multipart with one `file` field. Text is extracted at once (PDF, DOCX, text and code files;
+         *     images have none). 400 for an unsupported type or a file over the size limit. The attachment
+         *     is yours alone until a message is created with it; unsent uploads are swept after a day.
+         */
+        post: operations["upload_attachment_api_teams__team_id__attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/teams/{team_id}/conversations": {
         parameters: {
             query?: never;
@@ -460,7 +525,8 @@ export interface paths {
         /**
          * Create a conversation
          * @description With `message`, the first user message is stored and its run queued in the same transaction
-         *     (`activeRun` is set on the response); 400 names an unknown model.
+         *     (`activeRun` is set on the response); 400 names an unknown model. File parts follow the rules
+         *     of `POST …/messages` (404 for an attachment that is not yours here, 409 for one already sent).
          */
         post: operations["create_conversation_api_teams__team_id__conversations_post"];
         delete?: never;
@@ -544,6 +610,44 @@ export interface components {
              */
             email: string;
         };
+        /**
+         * AttachmentKind
+         * @enum {string}
+         */
+        AttachmentKind: "image" | "pdf" | "docx" | "text";
+        /** AttachmentOut */
+        AttachmentOut: {
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Extractionerror */
+            extractionError?: string | null;
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["AttachmentKind"];
+            /** Mediatype */
+            mediaType: string;
+            /** Messageid */
+            messageId?: string | null;
+            /** Sizebytes */
+            sizeBytes: number;
+            /**
+             * Teamid
+             * Format: uuid
+             */
+            teamId: string;
+            /** Textchars */
+            textChars?: number | null;
+            /** Url */
+            url: string;
+        };
         /** AuthOrganizationOut */
         AuthOrganizationOut: {
             /**
@@ -580,6 +684,14 @@ export interface components {
              * Format: uuid
              */
             id: string;
+        };
+        /** Body_upload_attachment_api_teams__team_id__attachments_post */
+        Body_upload_attachment_api_teams__team_id__attachments_post: {
+            /**
+             * File
+             * @description The file to attach (one per request)
+             */
+            file: string;
         };
         /** ConversationDetailOut */
         ConversationDetailOut: {
@@ -650,7 +762,7 @@ export interface components {
             /** Model */
             model?: string | null;
             /** Parts */
-            parts: components["schemas"]["TextPartIn"][];
+            parts: components["schemas"]["MessagePartIn"][];
             tools?: components["schemas"]["RunOptionsIn"];
         };
         /** CreateOrganizationIn */
@@ -696,6 +808,46 @@ export interface components {
             error: string;
             /** Statuscode */
             statusCode: number;
+        };
+        /**
+         * FilePartIn
+         * @description An upload (``POST /api/teams/{team_id}/attachments``) of the sender's, in this team and not
+         *     yet part of a message, to bind to this message.
+         */
+        FilePartIn: {
+            /**
+             * Attachmentid
+             * Format: uuid
+             */
+            attachmentId: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "file";
+        };
+        /**
+         * FilePartOut
+         * @description An attachment on a user message (the AI SDK ``FileUIPart`` shape plus the attachment id);
+         *     ``url`` is ``/api/attachments/{attachmentId}/content``.
+         */
+        FilePartOut: {
+            /**
+             * Attachmentid
+             * Format: uuid
+             */
+            attachmentId: string;
+            /** Filename */
+            filename: string;
+            /** Mediatype */
+            mediaType: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "file";
+            /** Url */
+            url: string;
         };
         /** ForgotPasswordIn */
         ForgotPasswordIn: {
@@ -776,7 +928,8 @@ export interface components {
              */
             updatedAt: string;
         };
-        MessagePartOut: components["schemas"]["TextPartOut"] | components["schemas"]["ReasoningPartOut"] | components["schemas"]["StepStartPartOut"] | components["schemas"]["SourceUrlPartOut"] | components["schemas"]["ToolPartOut"] | components["schemas"]["DataPartOut"];
+        MessagePartIn: components["schemas"]["TextPartIn"] | components["schemas"]["FilePartIn"];
+        MessagePartOut: components["schemas"]["TextPartOut"] | components["schemas"]["ReasoningPartOut"] | components["schemas"]["StepStartPartOut"] | components["schemas"]["SourceUrlPartOut"] | components["schemas"]["FilePartOut"] | components["schemas"]["ToolPartOut"] | components["schemas"]["DataPartOut"];
         /**
          * MessageRole
          * @enum {string}
@@ -804,6 +957,8 @@ export interface components {
             supportsReasoning: boolean;
             /** Supportstools */
             supportsTools: boolean;
+            /** Supportsvision */
+            supportsVision: boolean;
             tier: components["schemas"]["Tier"];
         };
         /** OrganizationMemberOut */
@@ -1187,6 +1342,226 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_attachment_api_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentOut"];
+                };
+            };
+            /** @description Missing, invalid or expired bearer token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not found, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A dependency (database, identity provider) is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_attachment_api_attachments__attachment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid or expired bearer token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not found, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflicts with existing state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A dependency (database, identity provider) is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    get_attachment_content_api_attachments__attachment_id__content_get: {
+        parameters: {
+            query?: {
+                /** @description Serve as `Content-Disposition: attachment` */
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored bytes under the attachment's media type. `Content-Disposition` is `inline` (or `attachment` with `?download=true`) with the RFC 5987 encoded filename; cached privately for an hour. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Missing, invalid or expired bearer token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not found, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A dependency (database, identity provider) is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     forgot_password_api_auth_forgot_password_post: {
         parameters: {
             query?: never;
@@ -2761,6 +3136,86 @@ export interface operations {
             };
         };
     };
+    upload_attachment_api_teams__team_id__attachments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_teams__team_id__attachments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentOut"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Missing, invalid or expired bearer token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not found, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description A dependency (database, identity provider) is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     list_conversations_api_teams__team_id__conversations_get: {
         parameters: {
             query?: {
@@ -2885,6 +3340,15 @@ export interface operations {
             };
             /** @description Not found, or not visible to the caller */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflicts with existing state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

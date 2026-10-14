@@ -16,6 +16,100 @@
         "title": "AddTeamMemberIn",
         "type": "object"
       },
+      "AttachmentKind": {
+        "enum": [
+          "image",
+          "pdf",
+          "docx",
+          "text"
+        ],
+        "title": "AttachmentKind",
+        "type": "string"
+      },
+      "AttachmentOut": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "extractionError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extractionerror"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttachmentKind"
+          },
+          "mediaType": {
+            "title": "Mediatype",
+            "type": "string"
+          },
+          "messageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messageid"
+          },
+          "sizeBytes": {
+            "title": "Sizebytes",
+            "type": "integer"
+          },
+          "teamId": {
+            "format": "uuid",
+            "title": "Teamid",
+            "type": "string"
+          },
+          "textChars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Textchars"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "teamId",
+          "filename",
+          "mediaType",
+          "sizeBytes",
+          "kind",
+          "url",
+          "createdAt"
+        ],
+        "title": "AttachmentOut",
+        "type": "object"
+      },
       "AuthOrganizationOut": {
         "properties": {
           "id": {
@@ -88,6 +182,21 @@
           "createdAt"
         ],
         "title": "AuthUserOut",
+        "type": "object"
+      },
+      "Body_upload_attachment_api_teams__team_id__attachments_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "The file to attach (one per request)",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_api_teams__team_id__attachments_post",
         "type": "object"
       },
       "ConversationDetailOut": {
@@ -286,9 +395,9 @@
           },
           "parts": {
             "items": {
-              "$ref": "#/components/schemas/TextPartIn"
+              "$ref": "#/components/schemas/MessagePartIn"
             },
-            "maxItems": 8,
+            "maxItems": 13,
             "minItems": 1,
             "title": "Parts",
             "type": "array"
@@ -417,6 +526,64 @@
           "correlationId"
         ],
         "title": "ErrorOut",
+        "type": "object"
+      },
+      "FilePartIn": {
+        "additionalProperties": false,
+        "description": "An upload (``POST /api/teams/{team_id}/attachments``) of the sender's, in this team and not\nyet part of a message, to bind to this message.",
+        "properties": {
+          "attachmentId": {
+            "format": "uuid",
+            "title": "Attachmentid",
+            "type": "string"
+          },
+          "type": {
+            "const": "file",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "attachmentId"
+        ],
+        "title": "FilePartIn",
+        "type": "object"
+      },
+      "FilePartOut": {
+        "description": "An attachment on a user message (the AI SDK ``FileUIPart`` shape plus the attachment id);\n``url`` is ``/api/attachments/{attachmentId}/content``.",
+        "properties": {
+          "attachmentId": {
+            "format": "uuid",
+            "title": "Attachmentid",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "mediaType": {
+            "title": "Mediatype",
+            "type": "string"
+          },
+          "type": {
+            "const": "file",
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "mediaType",
+          "filename",
+          "url",
+          "attachmentId"
+        ],
+        "title": "FilePartOut",
         "type": "object"
       },
       "ForgotPasswordIn": {
@@ -623,6 +790,16 @@
         "title": "MessageOut",
         "type": "object"
       },
+      "MessagePartIn": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TextPartIn"
+          },
+          {
+            "$ref": "#/components/schemas/FilePartIn"
+          }
+        ]
+      },
       "MessagePartOut": {
         "oneOf": [
           {
@@ -636,6 +813,9 @@
           },
           {
             "$ref": "#/components/schemas/SourceUrlPartOut"
+          },
+          {
+            "$ref": "#/components/schemas/FilePartOut"
           },
           {
             "$ref": "#/components/schemas/ToolPartOut"
@@ -688,6 +868,10 @@
             "title": "Supportstools",
             "type": "boolean"
           },
+          "supportsVision": {
+            "title": "Supportsvision",
+            "type": "boolean"
+          },
           "tier": {
             "$ref": "#/components/schemas/Tier"
           }
@@ -700,6 +884,7 @@
           "tier",
           "supportsTools",
           "supportsReasoning",
+          "supportsVision",
           "isDefault"
         ],
         "title": "ModelOut",
@@ -1322,7 +1507,6 @@
         "properties": {
           "text": {
             "maxLength": 32000,
-            "minLength": 1,
             "title": "Text",
             "type": "string"
           },
@@ -1573,6 +1757,296 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/attachments/{attachment_id}": {
+      "delete": {
+        "description": "Only the uploader (403 otherwise), and only before a message carries it (409 after).",
+        "operationId": "delete_attachment_api_attachments__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete an unsent attachment",
+        "tags": [
+          "attachments"
+        ]
+      },
+      "get": {
+        "description": "Visible to every member of the attachment's team.",
+        "operationId": "get_attachment_api_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get an attachment's metadata",
+        "tags": [
+          "attachments"
+        ]
+      }
+    },
+    "/api/attachments/{attachment_id}/content": {
+      "get": {
+        "operationId": "get_attachment_content_api_attachments__attachment_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Serve as `Content-Disposition: attachment`",
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Serve as `Content-Disposition: attachment`",
+              "title": "Download",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The stored bytes under the attachment's media type. `Content-Disposition` is `inline` (or `attachment` with `?download=true`) with the RFC 5987 encoded filename; cached privately for an hour."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Download an attachment's content",
+        "tags": [
+          "attachments"
+        ]
+      }
+    },
     "/api/auth/forgot-password": {
       "post": {
         "description": "Always 204, whether or not an account exists, so addresses cannot be enumerated.\n\nThe mailed link works once and expires after 30 minutes; a new request replaces it.",
@@ -2316,7 +2790,7 @@
     },
     "/api/conversations/{conversation_id}/messages": {
       "post": {
-        "description": "Stores the user message and queues the assistant's run (returned). 409 while a run is\nactive in the conversation; 400 names an unknown model.",
+        "description": "Stores the user message and queues the assistant's run (returned). 409 while a run is\nactive in the conversation; 400 names an unknown model. File parts name your own unsent\nuploads in this team (404 otherwise; 409 once already part of a message; 400 over the\nper-message limit or listed twice); they are persisted as `file` parts with the content URL.",
         "operationId": "create_message_api_conversations__conversation_id__messages_post",
         "parameters": [
           {
@@ -3631,6 +4105,115 @@
         ]
       }
     },
+    "/api/teams/{team_id}/attachments": {
+      "post": {
+        "description": "Multipart with one `file` field. Text is extracted at once (PDF, DOCX, text and code files;\nimages have none). 400 for an unsupported type or a file over the size limit. The attachment\nis yours alone until a message is created with it; unsent uploads are swept after a day.",
+        "operationId": "upload_attachment_api_teams__team_id__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_teams__team_id__attachments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Bad request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Upload an attachment",
+        "tags": [
+          "attachments"
+        ]
+      }
+    },
     "/api/teams/{team_id}/conversations": {
       "get": {
         "description": "Newest activity first; private conversations appear only to their creator. 400 on a bad cursor.",
@@ -3761,7 +4344,7 @@
         ]
       },
       "post": {
-        "description": "With `message`, the first user message is stored and its run queued in the same transaction\n(`activeRun` is set on the response); 400 names an unknown model.",
+        "description": "With `message`, the first user message is stored and its run queued in the same transaction\n(`activeRun` is set on the response); 400 names an unknown model. File parts follow the rules\nof `POST \u2026/messages` (404 for an attachment that is not yours here, 409 for one already sent).",
         "operationId": "create_conversation_api_teams__team_id__conversations_post",
         "parameters": [
           {
@@ -3825,6 +4408,16 @@
               }
             },
             "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
           },
           "422": {
             "content": {
