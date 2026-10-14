@@ -46,7 +46,6 @@ _EXTENSION_TYPES: dict[str, str] = {
     ".xml": "application/xml",
     ".html": "text/html",
     ".css": "text/css",
-    ".svg": "image/svg+xml",
     ".yaml": "application/yaml",
     ".yml": "application/yaml",
     ".toml": "application/toml",
@@ -61,6 +60,8 @@ _PLAIN_TEXT_EXTENSIONS: frozenset[str] = frozenset(
         ".py", ".java", ".go", ".rs", ".rb", ".php", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".kt", ".swift",
         ".scala", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".ini", ".cfg", ".env.example", ".rst", ".txt", ".scss",
         ".tex", ".dockerfile", ".makefile", ".gitignore",
+        # SVG is XML on the wire: it is read as text, never shown to the model as an image.
+        ".svg",
     }
 )  # fmt: skip
 _BARE_NAMES: frozenset[str] = frozenset({"dockerfile", "makefile"})
@@ -86,10 +87,7 @@ def _type_of_extension(filename: str) -> str | None:
     if lowered in _BARE_NAMES:
         return "text/plain"
     suffix = next((ext for ext in _SUFFIXES if lowered.endswith(ext)), None)
-    if suffix is None:
-        return None
-    # `.svg` is a text format on the wire (XML) and extracted as such, but it is never an image kind here.
-    return _EXTENSION_TYPES.get(suffix, "text/plain") if suffix != ".svg" else "text/plain"
+    return _EXTENSION_TYPES.get(suffix, "text/plain") if suffix is not None else None
 
 
 def classify(filename: str, declared_type: str) -> tuple[AttachmentKind, str]:
