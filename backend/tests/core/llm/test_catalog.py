@@ -6,7 +6,13 @@ from app.core.config import parse_model_id
 from app.core.exceptions import AppError
 from app.core.llm.catalog import ModelCatalog, model_catalog
 
-MODELS = ["anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5", "anthropic:claude-haiku-5-5", "openai:llama3.3"]
+MODELS = [
+    "anthropic:claude-opus-5-5",
+    "anthropic:claude-sonnet-5-5",
+    "anthropic:claude-haiku-5-5",
+    "openai:llama3.3",
+    "openai:gpt-5.4-mini",
+]
 
 
 def _catalog(*, anthropic: bool = True, openai: bool = False) -> ModelCatalog:
@@ -73,7 +79,21 @@ class TestCatalog:
         assert catalog.title_model().id == "anthropic:claude-haiku-5-5"
         assert catalog.cheaper(catalog.default()).id == "anthropic:claude-sonnet-5-5"
         assert catalog.cheaper(catalog.title_model()).id == "anthropic:claude-haiku-5-5"
-        assert catalog.cheaper(catalog.get("openai:llama3.3")).id == "openai:llama3.3"
+        assert catalog.cheaper(catalog.get("openai:llama3.3")).id == "openai:gpt-5.4-mini"
+        assert catalog.cheaper(catalog.get("openai:gpt-5.4-mini")).id == "openai:gpt-5.4-mini"
+
+    def test_defaults_fall_back_to_the_available_provider(self) -> None:
+        catalog = _catalog(anthropic=False, openai=True)
+        assert catalog.default().id == "openai:llama3.3"
+        assert catalog.default().is_default is True
+        assert catalog.get("anthropic:claude-opus-5-5" if False else "openai:gpt-5.4-mini").is_default is False
+        assert catalog.title_model().id == "openai:gpt-5.4-mini"
+        assert [spec.id for spec in catalog.available()] == ["openai:llama3.3", "openai:gpt-5.4-mini"]
+
+    def test_configured_defaults_win_when_available(self) -> None:
+        catalog = _catalog(openai=True)
+        assert catalog.default().id == "anthropic:claude-opus-5-5"
+        assert catalog.title_model().id == "anthropic:claude-haiku-5-5"
 
     def test_process_catalog_follows_the_test_environment(self) -> None:
         assert [spec.id for spec in model_catalog().available()] == MODELS[:3]

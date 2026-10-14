@@ -65,6 +65,15 @@ def _display_name(model_id: str) -> str:
     return " ".join(part.capitalize() for part in model_id.replace("_", "-").split("-"))
 
 
+def _openai_tier(model_id: str) -> Tier:
+    """OpenAI-style naming: `-mini` / `-nano` variants are the fast tier, `-pro` the frontier."""
+    if model_id.endswith(("-mini", "-nano")):
+        return "fast"
+    if model_id.endswith("-pro"):
+        return "frontier"
+    return "balanced"
+
+
 class ModelCatalog:
     def __init__(
         self,
@@ -79,9 +88,20 @@ class ModelCatalog:
         openai_supports_vision: bool,
     ) -> None:
         self._configured: dict[LlmProvider, bool] = {"anthropic": anthropic_configured, "openai": openai_configured}
+        parsed = [(full_id, *parse_model_id(full_id)) for full_id in model_ids]
+        # The configured defaults apply only while their provider has credentials; otherwise the
+        # first available model (and the first available fast one for titles) steps in, so a
+        # single provider key is enough to make the whole app usable.
+        available = [full_id for full_id, provider, _ in parsed if self._configured[provider]]
+        fast = [
+            full_id
+            for full_id, provider, model_id in parsed
+            if full_id in available and _tier_of(provider, model_id) == "fast"
+        ]
+        default_id = default_id if default_id in available else (available[0] if available else default_id)
+        title_id = title_id if title_id in available else (fast[0] if fast else available[0] if available else title_id)
         self._specs: dict[str, ModelSpec] = {}
-        for full_id in model_ids:
-            provider, model_id = parse_model_id(full_id)
+        for full_id, provider, model_id in parsed:
             if provider == "anthropic":
                 known = _KNOWN_ANTHROPIC.get(model_id)
                 spec = ModelSpec(
@@ -104,7 +124,7 @@ class ModelCatalog:
                     provider=provider,
                     model_id=model_id,
                     display_name=_display_name(model_id),
-                    tier="balanced",
+                    tier=_openai_tier(model_id),
                     supports_tools=openai_supports_tools,
                     supports_reasoning=openai_supports_reasoning,
                     supports_vision=openai_supports_vision,
@@ -141,8 +161,6 @@ class ModelCatalog:
 
     def cheaper(self, spec: ModelSpec) -> ModelSpec:
         """The same provider one tier down (frontier → balanced → fast), or ``spec`` itself."""
-        if spec.provider != "anthropic":
-            return spec
         for tier in _TIER_ORDER[_TIER_ORDER.index(spec.tier) + 1 :]:
             for candidate in self._specs.values():
                 if candidate.provider == spec.provider and candidate.tier == tier:
@@ -162,6 +180,13 @@ def estimate_cost_usd(
     return round(
         ((uncached + cached) * spec.input_usd_per_mtok + output_tokens * spec.output_usd_per_mtok) / 1_000_000, 6
     )
+
+
+def _tier_of(provider: LlmProvider, model_id: str) -> Tier:
+    if provider == "anthropic":
+        known = _KNOWN_ANTHROPIC.get(model_id)
+        return known.tier if known else "balanced"
+    return _openai_tier(model_id)
 
 
 @cache

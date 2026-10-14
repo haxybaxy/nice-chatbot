@@ -11,6 +11,7 @@ import pytest
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 
+from app.core.config import OPENAI_DEFAULT_BASE_URL
 from app.core.exceptions import AppError
 from app.core.llm.chat_models import (
     BuiltModel,
@@ -199,10 +200,24 @@ class TestOpenAICompatible:
         }
         assert built.model.tags == ["purpose:title", "nostream"]
 
-    def test_missing_base_url_is_503(self) -> None:
+    def test_openai_itself_without_a_key_is_503(self) -> None:
+        config = _config(openai_base_url=OPENAI_DEFAULT_BASE_URL, openai_api_key=None)
         with pytest.raises(AppError) as error:
-            build_chat_model(LOCAL, _config(openai_base_url=None), effort="medium", purpose="chat")
+            build_chat_model(LOCAL, config, effort="medium", purpose="chat")
         assert error.value.status_code == 503
+        # A key activates OpenAI itself; a custom server never needed one.
+        build_chat_model(
+            LOCAL,
+            _config(openai_base_url=OPENAI_DEFAULT_BASE_URL, openai_api_key="sk-test"),
+            effort="medium",
+            purpose="chat",
+        )
+        build_chat_model(
+            LOCAL,
+            _config(openai_base_url="http://localhost:11434/v1", openai_api_key=None),
+            effort="medium",
+            purpose="chat",
+        )
 
 
 class TestFactory:

@@ -196,7 +196,11 @@ second method. (`tests/guards/test_use_cases.py`.)
   `app/db/config.py` — so Alembic needs only `DATABASE_URL`. The chat settings all have defaults
   and a blank value (`KEY=`) means unset: a missing provider key hides its models, a missing search
   key drops the web tools, missing Langfuse keys make tracing a no-op; only inconsistent
-  configuration (a default model outside `LLM_MODELS`, `openai:claude-*`) refuses to start. Every env
+  configuration (a default model outside `LLM_MODELS`, `openai:claude-*`) refuses to start.
+  Environment variables are for secrets: the OpenAI base URL, the model allowlist and the
+  capability flags are code defaults (`LlmSettings`), overridden only to point the `openai`
+  provider at a local server. When the preferred default/title model's provider has no key, the
+  catalog's first available model (and first available fast one) stands in. Every env
   var is a field on one of them; `os.environ` and `BaseSettings` outside `config.py` are banned
   imports. `ENVIRONMENT` is a `Literal` (a typo refuses to start); `CORS_ORIGINS` rejects `"*"`.
   `.env.example` must list every field (`tests/guards/test_settings.py`). `mail_settings`

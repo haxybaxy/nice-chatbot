@@ -717,9 +717,10 @@ LOCAL_MODEL = "openai:llama3.3"
 
 @pytest.fixture
 def local_model(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    """An OpenAI-compatible model in the process catalog (the suite's settings list only Claude):
-    the one kind of model that cannot see images, since ``LLM_OPENAI_SUPPORTS_VISION`` is off."""
+    """A local OpenAI-compatible model in the process catalog (the suite's settings list only
+    Claude), configured as a server that cannot see images (``LLM_OPENAI_SUPPORTS_VISION=false``)."""
     monkeypatch.setattr(llm_settings, "openai_base_url", "http://localhost:11434/v1")
+    monkeypatch.setattr(llm_settings, "llm_openai_supports_vision", False)
     monkeypatch.setattr(llm_settings, "llm_models", [*llm_settings.llm_models, LOCAL_MODEL])
     model_catalog.cache_clear()
     yield LOCAL_MODEL

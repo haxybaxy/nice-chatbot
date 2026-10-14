@@ -63,9 +63,12 @@ just mprocs     # the same, one mprocs pane per process (api, worker, web, db lo
 just db-down    # stop Postgres (data is kept)
 ```
 
-Chat needs keys in `backend/.env`: `ANTHROPIC_API_KEY` (or `OPENAI_BASE_URL` for an
-OpenAI-compatible server plus an `openai:<model>` entry in `LLM_MODELS`), `TAVILY_API_KEY` for web
-search, `SANDBOX_BACKEND=docker` (after `just sandbox-pull` in `backend/`) for code execution, and
+Environment variables are for secrets; everything else has a code default. In `backend/.env` set
+`ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` (each key activates its provider's models in the
+picker; the first available model becomes the default), `TAVILY_API_KEY` for web search,
+`SANDBOX_BACKEND=docker` (after `just sandbox-pull` in `backend/`) for code execution, and
 `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` for tracing. Everything degrades gracefully when
-unset: that provider's models, that tool or tracing simply disappear. The containerized backend
+unset: that provider's models, that tool or tracing simply disappear. A local OpenAI-compatible
+server (vLLM, Ollama, unsloth) is the one non-secret override: `OPENAI_BASE_URL` plus its models
+in `LLM_MODELS`. The containerized backend
 (API + worker) is `docker compose --profile app up --build` in `backend/`.

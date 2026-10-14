@@ -30,7 +30,7 @@ from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI  # noqa: TID251
 from pydantic import SecretStr
 
-from app.core.config import Effort, llm_settings
+from app.core.config import OPENAI_DEFAULT_BASE_URL, Effort, llm_settings
 from app.core.exceptions import AppError
 from app.core.llm.catalog import ModelSpec
 from app.core.ui_stream import JsonObject
@@ -82,7 +82,7 @@ class ProviderConfig:
     anthropic_api_key: str | None
     anthropic_base_url: str | None
     openai_api_key: str | None
-    openai_base_url: str | None
+    openai_base_url: str
     default_max_tokens: int
     request_timeout_s: float
     max_retries: int
@@ -186,7 +186,8 @@ def _build_openai(
     output_schema: JsonObject | None,
     silent: bool,
 ) -> BuiltModel:
-    if config.openai_base_url is None:
+    # OpenAI itself needs a key; another OpenAI-compatible server is usable as soon as it is named.
+    if config.openai_api_key is None and config.openai_base_url == OPENAI_DEFAULT_BASE_URL:
         raise AppError.service_unavailable("LLM provider not configured", provider="openai", model=spec.id)
     # ChatOpenAI always renders `max_tokens` as `max_completion_tokens`; servers that only know
     # the legacy name get it through `extra_body` instead.

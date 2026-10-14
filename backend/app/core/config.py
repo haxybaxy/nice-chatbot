@@ -151,6 +151,8 @@ def _blank_to_none(value: object) -> object:
 
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
+# The "openai" provider talks to OpenAI itself unless pointed at another OpenAI-compatible server.
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 LlmProvider = Literal["anthropic", "openai"]
 _PROVIDERS: frozenset[str] = frozenset({"anthropic", "openai"})
 # Model ids are never date-suffixed snapshots (claude-opus-5-5, not claude-opus-5-5-20260401).
@@ -224,8 +226,11 @@ class AttachmentSettings(BaseSettings):
 class LlmSettings(BaseSettings):
     """Model providers and the model allowlist.
 
-    ``anthropic:*`` models need ``ANTHROPIC_API_KEY``; ``openai:*`` models need ``OPENAI_BASE_URL``
-    (an OpenAI-compatible server such as vLLM or Ollama — the key is optional for those).
+    Secrets are the only thing the environment has to provide: ``ANTHROPIC_API_KEY`` activates the
+    ``anthropic:*`` models, ``OPENAI_API_KEY`` the ``openai:*`` ones (against api.openai.com by
+    default). Everything else below is a code default; override it only to point the "openai"
+    provider at another OpenAI-compatible server (vLLM, Ollama, an unsloth-served model — no key
+    needed then) or to change the allowlist.
     """
 
     model_config: ClassVar[SettingsConfigDict] = settings_config()
@@ -233,7 +238,7 @@ class LlmSettings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     anthropic_base_url: str | None = None
     openai_api_key: SecretStr | None = None
-    openai_base_url: str | None = None
+    openai_base_url: str = OPENAI_DEFAULT_BASE_URL
 
     # JSON list of "<provider>:<model-id>" offered in the model picker.
     llm_models: list[str] = Field(
@@ -241,30 +246,41 @@ class LlmSettings(BaseSettings):
             "anthropic:claude-opus-5-5",
             "anthropic:claude-sonnet-5-5",
             "anthropic:claude-haiku-5-5",
+            "openai:gpt-5.5",
+            "openai:gpt-5.4-mini",
         ]
     )
+    # Preferred default and title/citation-check models; when their provider has no key the
+    # catalog falls back to the first available model (and the first available fast one).
     llm_default_model: str = "anthropic:claude-opus-5-5"
-    # Cheap model for conversation titles and the research citation check.
     llm_title_model: str = "anthropic:claude-haiku-5-5"
     llm_default_effort: Effort = "medium"
     llm_max_tokens: int = 64_000
     llm_request_timeout_s: float = 600.0
     llm_max_retries: int = 2
 
-    # Capabilities of the OpenAI-compatible server (one server, one setting each).
+    # Capabilities of the "openai" server. True for OpenAI itself; turn one off for a local
+    # server that lacks it (without vision, attached images reach the model as a text placeholder).
     llm_openai_supports_tools: bool = True
-    llm_openai_supports_reasoning: bool = False
-    # Whether it accepts image content blocks (Claude always does); without it, attached images
-    # reach the model as a text placeholder.
-    llm_openai_supports_vision: bool = False
-    llm_openai_parallel_tool_calls: bool = False
+    llm_openai_supports_reasoning: bool = True
+    llm_openai_supports_vision: bool = True
+    llm_openai_parallel_tool_calls: bool = True
     # vLLM/Ollama accept `max_tokens`; api.openai.com wants `max_completion_tokens`.
     llm_openai_max_tokens_param: Literal["max_completion_tokens", "max_tokens"] = "max_completion_tokens"
 
-    @field_validator("anthropic_api_key", "anthropic_base_url", "openai_api_key", "openai_base_url", mode="before")
+    @field_validator("anthropic_api_key", "anthropic_base_url", "openai_api_key", mode="before")
     @classmethod
     def _optional(cls, value: object) -> object:
         return _blank_to_none(value)
+
+    @field_validator("openai_base_url", mode="before")
+    @classmethod
+    def _openai_base_url(cls, value: object) -> object:
+        """A blank value means OpenAI itself; a trailing slash never changes the server."""
+        if isinstance(value, str):
+            value = value.strip().rstrip("/")
+            return value or OPENAI_DEFAULT_BASE_URL
+        return value
 
     @field_validator("llm_models", mode="after")
     @classmethod
@@ -294,7 +310,8 @@ class LlmSettings(BaseSettings):
 
     @property
     def openai_configured(self) -> bool:
-        return self.openai_base_url is not None
+        """OpenAI itself needs the key; another OpenAI-compatible server is usable as soon as it is named."""
+        return self.openai_api_key is not None or self.openai_base_url != OPENAI_DEFAULT_BASE_URL
 
 
 class AgentSettings(BaseSettings):
