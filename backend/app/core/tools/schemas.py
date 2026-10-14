@@ -3,14 +3,15 @@
 Inputs are ``BaseSchema`` (the model's arguments are re-validated here before a tool runs; the
 model-facing JSON schema is derived from them with snake_case names). Outputs are
 ``BaseSchemaOut`` and are dumped by alias, so the ``tool-output-available`` payload the UI
-renders is camelCase like every other wire object.
+renders is camelCase like every other wire object. Text the tools return (page content, program
+output) is ``VerbatimStr``: the bases strip surrounding whitespace, which would corrupt it.
 """
 
 from typing import Literal
 
 from pydantic import Field
 
-from app.core.schemas import BaseSchema, BaseSchemaOut
+from app.core.schemas import BaseSchema, BaseSchemaOut, VerbatimStr
 
 # ── web_search ───────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ class WebSearchResultOut(BaseSchemaOut):
     source_id: str
     title: str
     url: str
-    snippet: str
+    snippet: VerbatimStr
     published_at: str | None = None
     score: float | None = None
 
@@ -58,7 +59,7 @@ class WebFetchOut(BaseSchemaOut):
     source_id: str
     url: str
     title: str | None = None
-    content: str
+    content: VerbatimStr
     chars: int
     truncated: bool
 
@@ -73,8 +74,8 @@ class RunCodeIn(BaseSchema):
 
 
 class RunCodeOut(BaseSchemaOut):
-    stdout: str
-    stderr: str
+    stdout: VerbatimStr
+    stderr: VerbatimStr
     exit_code: int
     duration_ms: int
     truncated: bool

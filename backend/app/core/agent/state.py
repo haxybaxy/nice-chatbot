@@ -8,6 +8,8 @@ from typing import Literal
 from langchain_core.messages import AIMessage
 from langgraph.graph import MessagesState  # pyright: ignore[reportMissingTypeStubs] — no py.typed
 
+from app.core.config import agent_settings
+
 type StopReason = Literal["end", "refusal", "length", "step_limit", "cancelled", "error"]
 # Anthropic `stop_reason` / OpenAI `finish_reason` → StopReason; a tool-call stop means "keep going".
 _ANTHROPIC_STOPS: dict[str, StopReason] = {
@@ -34,7 +36,6 @@ class StopInfo:
     """Why a run ended, as the UI and the run row record it."""
 
     reason: StopReason
-    category: str | None = None
     explanation: str | None = None
 
     @property
@@ -53,6 +54,14 @@ class AgentLimits:
     def recursion_limit(self) -> int:
         """LangGraph's ``recursion_limit`` for a loop bounded by these limits."""
         return 2 * self.max_model_calls + 4
+
+    @classmethod
+    def from_settings(cls) -> AgentLimits:
+        return cls(
+            max_model_calls=agent_settings.agent_max_model_calls,
+            max_tool_calls=agent_settings.agent_max_tool_calls,
+            max_tool_calls_per_step=agent_settings.agent_max_tool_calls_per_step,
+        )
 
 
 class AgentState(MessagesState, total=False):

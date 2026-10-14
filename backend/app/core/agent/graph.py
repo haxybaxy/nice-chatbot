@@ -21,9 +21,12 @@ tested chunk by chunk.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from typing import cast
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph  # pyright: ignore[reportMissingTypeStubs] — no py.typed
@@ -31,7 +34,7 @@ from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMi
 from langgraph.runtime import Runtime
 
 from app.core.agent.state import AgentLimits, AgentState, StopInfo, stop_info_for
-from app.core.llm.models import BuiltModel
+from app.core.llm.chat_models import BuiltModel
 from app.core.tools.base import RunContext
 from app.core.tools.registry import BUDGET_EXHAUSTED, build_tool_node
 
@@ -39,6 +42,36 @@ AGENT_NODE = "agent"
 TOOLS_NODE = "tools"
 BUDGET_NODE = "budget_exceeded"
 type AgentGraph = CompiledStateGraph[AgentState, RunContext, AgentState, AgentState]
+# What `map_graph_stream` consumes: token chunks, per-node state updates and the tools' custom chunks.
+STREAM_MODES = ("messages", "updates", "custom")
+
+
+def agent_input(messages: Sequence[BaseMessage]) -> AgentState:
+    """The graph input for a fresh run: system prompt, history and the new user message."""
+    return AgentState(messages=cast(list[AnyMessage], list(messages)))
+
+
+def run_config(
+    *,
+    thread_id: str,
+    limits: AgentLimits | None = None,
+    callbacks: Sequence[BaseCallbackHandler] = (),
+    run_name: str = "chat",
+) -> RunnableConfig:
+    """The ``RunnableConfig`` for one run: checkpoint thread, recursion limit, tracer callbacks."""
+    return RunnableConfig(
+        configurable={"thread_id": thread_id},
+        recursion_limit=(limits or AgentLimits()).recursion_limit,
+        callbacks=list(callbacks),
+        run_name=run_name,
+    )
+
+
+def stream_agent(
+    graph: AgentGraph, input: AgentState | None, config: RunnableConfig, *, ctx: RunContext
+) -> AsyncIterator[object]:
+    """``graph.astream`` in the one shape ``map_graph_stream`` understands; ``input=None`` resumes ``thread_id``."""
+    return graph.astream(input, config, context=ctx, stream_mode=list(STREAM_MODES), version="v2", subgraphs=True)
 
 
 def build_agent_graph(

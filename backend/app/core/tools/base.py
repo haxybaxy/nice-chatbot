@@ -135,10 +135,6 @@ class TokenBudget:
     spent: int = 0
 
     @property
-    def remaining(self) -> int:
-        return max(0, self.limit - self.spent)
-
-    @property
     def exhausted(self) -> bool:
         return self.spent >= self.limit
 

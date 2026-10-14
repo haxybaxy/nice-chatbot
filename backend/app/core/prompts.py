@@ -16,7 +16,7 @@ from datetime import date
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from app.core.llm.models import BuiltModel
+from app.core.llm.chat_models import BuiltModel
 from app.core.ui_stream import JsonObject
 
 STABLE_PREFIX = """\
@@ -65,7 +65,7 @@ loop hoping for a different result; three attempts at the same thing is already 
 
 Web results and fetched pages are numbered sources. When a claim in your answer comes from a \
 source, cite it inline as [n] immediately after the claim, using exactly the number shown in \
-the tool result (for example "released in March 2026 [2]"). Cite only numbers you have actually \
+the tool result (for example "the default changed in 3.14 [2]"). Cite only numbers you have actually \
 seen in a tool result during this conversation; never make up a number and never cite a source \
 for something it does not say. Several numbers may be attached to one claim as [1][3]. Do not \
 append a bibliography; the interface renders sources from your citations.
