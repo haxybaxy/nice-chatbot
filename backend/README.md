@@ -46,16 +46,20 @@ app/
 ├── worker.py           the run worker: claims queued chat runs, runs the LangGraph graph, streams + persists
 ├── core/               config (pydantic-settings), errors + JSON envelope, structlog, request middleware,
 │                       Cognito + SES mail adapters, JWT verification / CurrentUserDep, shared schema bases,
-│                       SSE response + AI SDK chunk vocabulary, llm/ tools/ agent/ research/ (the chat runtime),
-│                       search (Tavily), sandbox (Docker), observability (Langfuse), prompts
+│                       SSE response + AI SDK chunk vocabulary, attachment download response,
+│                       llm/ tools/ agent/ research/ (the chat runtime), search (Tavily), sandbox (Docker),
+│                       observability (Langfuse), prompts
 ├── db/                 declarative Base + TimestampMixin, engine + get_db/session_scope, LISTEN/NOTIFY, model registry, migrations/
 ├── auth/               POST /api/auth/{signup,signin,refresh,signout,forgot-password,reset-password}
 ├── users/              GET/PATCH/DELETE /api/users/me
 ├── organizations/      POST/GET /api/organizations, GET/POST/DELETE …/members, POST …/teams
 ├── teams/              GET /api/teams, GET /api/teams/{id}, GET/POST/DELETE …/members
-└── chat/               conversations, messages, runs: POST/GET /api/teams/{id}/conversations, GET/PATCH/DELETE
-                        /api/conversations/{id}, POST …/messages, GET …/runs/active|{run}, POST …/cancel,
-                        GET …/runs/{run}/events (SSE), GET /api/chat/models
+├── chat/               conversations, messages, runs: POST/GET /api/teams/{id}/conversations, GET/PATCH/DELETE
+│                       /api/conversations/{id}, POST …/messages (text and file parts), GET …/runs/active|{run},
+│                       POST …/cancel, GET …/runs/{run}/events (SSE), GET /api/chat/models
+└── attachments/        files on messages: POST /api/teams/{id}/attachments (multipart `file`), GET
+                        /api/attachments/{id}, GET …/content (the bytes), DELETE /api/attachments/{id};
+                        bytes in Postgres (`attachment_blob`), text extracted at upload, orphans swept by the worker
 ```
 
 Each domain is flat: `router.py`, `schemas.py`, `models.py`, `repository.py`, `dependencies.py` and

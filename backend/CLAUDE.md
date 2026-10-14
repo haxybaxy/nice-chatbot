@@ -21,7 +21,8 @@ just migration "msg" && just migrate && just migrate-check
 
 Python 3.13 · uv · FastAPI · async SQLAlchemy 2 (`postgresql+psycopg`) · Alembic · pydantic v2 ·
 structlog · pyjwt · boto3 (Cognito, SES) · LangGraph + LangChain (`langchain-anthropic`,
-`langchain-openai`) · Langfuse · httpx (Tavily). Chat runs execute in a second process, the worker
+`langchain-openai`) · Langfuse · httpx (Tavily) · pypdf + python-docx (attachment text extraction) ·
+python-multipart (uploads). Chat runs execute in a second process, the worker
 (`app/worker.py`), fed by a Postgres queue — `docs/chat-architecture.md` has the flow. Follows
 [fastapi-best-practices](https://github.com/zhanymkanov/fastapi-best-practices); deliberate
 divergences: one central `AppError` instead of per-domain `exceptions.py`, singular table names,
@@ -41,8 +42,10 @@ app/<domain>/
 
 A domain directory contains exactly these entries (guard: no `service.py`, `utils.py`, …).
 `app/core` (config, errors, logging, middleware, Cognito and SES mail adapters, JWT security,
-schema bases, OpenAPI helpers, the SSE response, the AI SDK chunk vocabulary in `ui_stream.py` /
-`ui_fold.py`, and the chat runtime: `llm/` (catalog + LangChain model builder), `tools/`, `agent/`
+schema bases, OpenAPI helpers, the SSE response, the attachment download response (`downloads.py`),
+the AI SDK chunk vocabulary in `ui_stream.py` / `ui_fold.py`, and the chat runtime: `llm/` (catalog +
+LangChain model builder + history, with `llm/attachments.py` rendering attachments for the model),
+`tools/`, `agent/`
 (the LangGraph graph, stream mapper, checkpointer, and the worker's turn sink / mode assembly), `research/`, `search.py`, `sandbox.py`,
 `observability.py`, `prompts.py`), `app/db` (Base, engine, `get_db` + `session_scope`, the
 LISTEN/NOTIFY `listen.py`, model registry, DB settings, migrations), `app/api.py` (router
@@ -115,12 +118,39 @@ second method. (`tests/guards/test_use_cases.py`.)
   the response is sent — guarded. Code that outlives a request (the worker, an SSE tail) never
   holds a transaction across a network `await`: it opens `session_scope()` per step. A
   `StreamingResponse` body runs after the request session is closed, so it uses `sessions` too.
-- **Streaming**: the one non-JSON route is the run event stream (`GET …/runs/{run_id}/events`),
-  an `UIMessageStreamResponse` (`app/core/sse.py`) replaying `run_event` rows as AI SDK UI chunks
+- **Streaming**: the run event stream (`GET …/runs/{run_id}/events`) is an
+  `UIMessageStreamResponse` (`app/core/sse.py`) replaying `run_event` rows as AI SDK UI chunks
   (`app/core/ui_stream.py`) with `id: <seq>` frames, then tailing `LISTEN run_events` through
   `PgListener` (`app/db/listen.py`, a dedicated autocommit psycopg connection, never the pool).
-  `tests/guards/test_routes.py` exempts `text/event-stream` responses from the `response_model`
-  rule; error responses are still the JSON envelope (`json_error_envelopes` in `app/core/openapi.py`).
+  The other non-JSON route is the attachment download (`GET /api/attachments/{attachment_id}/content`),
+  an `AttachmentContentResponse` (`app/core/downloads.py`, class `media_type`
+  `application/octet-stream`, the stored type per instance). `tests/guards/test_routes.py` exempts
+  `StreamingResponse` subclasses whose class `media_type` is `text/event-stream` or
+  `application/octet-stream` from the `response_model` rule; error responses are still the JSON
+  envelope (`json_error_envelopes` in `app/core/openapi.py` rewrites both media types).
+- **Attachments** (`app/attachments/`): an upload (`POST /api/teams/{team_id}/attachments`, multipart
+  field `file`, read in 64 KiB chunks and refused past `ATTACHMENT_MAX_BYTES`) becomes an
+  `attachment` row (metadata, `kind` ∈ `image|pdf|docx|text` from the declared type with an
+  extension fallback, the canonical `media_type`) plus an `attachment_blob` row — the bytes live in
+  their own table so listing never loads them, and `AttachmentRepository.put_blob` / `get_blob` is
+  the seam an S3 adapter would replace. Text is extracted **at upload time** (`ExtractText`: pypdf,
+  python-docx, UTF-8; run in `asyncio.to_thread`; a corrupt or encrypted file sets
+  `extraction_error` instead of failing the upload), never by the worker. An upload belongs to its
+  uploader until a message is created with a `{"type": "file", "attachmentId"}` part:
+  `CreateMessage` binds it through the attachments domain's public `ClaimAttachmentsForMessage`
+  (same team and uploader else 404, already bound 409, over `ATTACHMENT_MAX_PER_MESSAGE` or
+  repeated 400) and persists the AI SDK `file` part (`mediaType`, `filename`, `url`, `attachmentId`).
+  `LoadTurn` reads the attachments of the user messages in the history window
+  (`LoadMessageAttachments`, image bytes only for images) onto `StoredMessage.attachments`;
+  `to_langchain` then builds that user message as content blocks — text first, an
+  `<attachment name type chars>` block per text-bearing file under the turn-wide
+  `ATTACHMENT_MODEL_TEXT_CHARS` budget (newest first, `[truncated: N more characters]`),
+  `<attachment … unreadable/>` for a failed extraction, `create_image_block` for images when
+  `ModelSpec.supports_vision` (Claude; OpenAI-compatible via `LLM_OPENAI_SUPPORTS_VISION`) and a
+  text placeholder otherwise; messages without attachments stay plain strings. The worker's reaper
+  also runs `ReapOrphanAttachments`: uploads with `message_id IS NULL` older than
+  `ATTACHMENT_ORPHAN_TTL_HOURS` go (a deleted conversation cascades to its messages, which SET NULL
+  the attachments, so they are swept too).
 - **Runs**: the `run` row is the queue (claimed with `FOR UPDATE SKIP LOCKED`, heartbeated, reaped),
   `run_event` the ordered chunk log, `LISTEN/NOTIFY` the wake-up (`run_queue`, `run_events`,
   `run_control`). Every worker-side write is fenced by `worker_id` + `status = 'running'`; the
@@ -156,7 +186,8 @@ second method. (`tests/guards/test_use_cases.py`.)
   (`Settings`: tier, identity, `FRONTEND_URL`, logging, CORS), `aws_settings` (`AwsSettings`:
   static boto3 credentials shared by the AWS adapters), `cognito_settings`
   (`CognitoSettings`: the pool and its region), `chat_settings` / `worker_settings` (run limits,
-  the worker loop), `llm_settings` / `agent_settings` (providers, the model allowlist, agent
+  the worker loop), `attachment_settings` (upload size, per-message count, extraction and per-turn
+  text caps, orphan TTL), `llm_settings` / `agent_settings` (providers, the model allowlist, agent
   budgets), `search_settings` / `sandbox_settings` / `research_settings` (tools, deep research)
   and `langfuse_settings` in `app/core/config.py`; `db_settings` (`DatabaseSettings`) in
   `app/db/config.py` — so Alembic needs only `DATABASE_URL`. The chat settings all have defaults
@@ -173,7 +204,10 @@ second method. (`tests/guards/test_use_cases.py`.)
   take `MembershipDep` (member of the path's organization, else 404) or `ManagerDep` (owner or
   admin, else 403); team routes `TeamMembershipDep` / `TeamManagerDep` (creator or organization
   manager); conversation routes `ConversationAccessDep` (team member and visibility, else 404)
-  and `RunAccessDep`. Every operation not listed in `PUBLIC_OPERATIONS`
+  and `RunAccessDep`; attachment routes `AttachmentAccessDep` (row exists and the caller is a
+  member of its team, else 404; the chat and attachments domains each resolve `{team_id}` with
+  their own `TeamAccessDep` over `FindTeamMembership`, since a domain never imports another's
+  `dependencies`). Every operation not listed in `PUBLIC_OPERATIONS`
   (`tests/guards/test_openapi.py`) must carry the bearer requirement.
 - **Models**: inherit `Base, TimestampMixin` (UUID pk, `created_at`, `updated_at`). Tables and
   columns are snake_case and singular; datetimes are `DateTime(timezone=True)` and end in `_at`;
@@ -229,8 +263,8 @@ library forces a rule off, scope it to that file with a commented header.
   provider, never Docker (the sandbox integration test is `@pytest.mark.docker` and skipped
   without a daemon).
 - `tests/guards/`: `test_architecture.py` (imports, layout, naming, raises), `test_use_cases.py`,
-  `test_routes.py` (async endpoints and dependencies, `*Out` response models, REST naming,
-  `DbDep` scope), `test_openapi.py` (bearer on non-public ops, `ErrorOut` on every documented
+  `test_routes.py` (async endpoints and dependencies, `*Out` response models except the two byte
+  streams, REST naming, `DbDep` scope), `test_openapi.py` (bearer on non-public ops, `ErrorOut` on every documented
   error, required statuses, docs hidden in prod, **`openapi.snapshot.json`** — any wire change
   fails until `just openapi-snapshot` is run and the diff reviewed), `test_schemas.py`,
   `test_settings.py`, `test_db_conventions.py`, `test_migrations_static.py`.
@@ -242,7 +276,8 @@ library forces a rule off, scope it to that file with a commented header.
 - **ruff** rule sets: pycodestyle, pyflakes, isort, bugbear (`B008` on: no `= Depends()`
   defaults), comprehensions, pyupgrade, logging (`LOG`/`G`), `ARG`, `RUF`, `ASYNC`, `FAST`
   (`FAST003` off: path params consumed by dependencies look unused), `DTZ`, `BLE` (the two
-  probe sites carry a `noqa`), `T20`, `N`, `PT`, `S` (tests may `assert` and hold literal
+  probe sites, the worker loops and the attachment text extractor carry a `noqa`), `T20`, `N`,
+  `PT`, `S` (tests may `assert` and hold literal
   credentials), `ERA`, `FIX` (no TODO/FIXME left behind), `PLC0415` (imports at module top — a
   lazy import can hide a cycle from sentrux), `TID` (bans + no relative imports). The `TID251`
   ban list in `pyproject.toml` names the sanctioned alternative in each message; the only
@@ -255,7 +290,7 @@ library forces a rule off, scope it to that file with a commented header.
   declarations look unused to it). A genuinely unused function or method fails `just check` —
   delete it rather than whitelisting. Names read only via serialization or from outside `app/`
   go in `[tool.vulture].ignore_names` with a comment.
-- **deptry**: `uvicorn` (CLI entrypoint) and `langgraph-checkpoint-postgres` (imported through the `langgraph` namespace) are declared-but-unimported by design (DEP002 ignores); `psycopg` is imported directly by `app/db/listen.py`.
+- **deptry**: `uvicorn` (CLI entrypoint), `langgraph-checkpoint-postgres` (imported through the `langgraph` namespace) and `python-multipart` (loaded by FastAPI for `UploadFile`) are declared-but-unimported by design (DEP002 ignores); `psycopg` is imported directly by `app/db/listen.py`.
 - **sentrux** is the PyPI release (0.1.x), older than the brew binary. Its `max_cc` is summed per
   file and `max_fn_lines` is file lines ÷ function count; see `app/.sentrux/rules.toml`. Cycles
   are locked at zero and it counts lazy/`TYPE_CHECKING` imports, so don't hide a cycle behind a
