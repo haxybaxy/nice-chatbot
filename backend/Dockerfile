@@ -37,3 +37,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Applies migrations (unless RUN_MIGRATIONS=false), then execs the CMD.
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --no-access-log"]
+
+# The run worker: same virtualenv, plus the docker CLI so the `run_code` tool can start throwaway
+# sandbox containers through the mounted Docker socket (local development; production uses a
+# dedicated sandbox host or a hosted sandbox adapter). No HTTP port, so no healthcheck.
+FROM runtime AS worker
+
+COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
+HEALTHCHECK NONE
+CMD ["python", "-m", "app.worker"]

@@ -10,6 +10,14 @@ sync:
 dev:
     uv run uvicorn app.main:app --reload --port 8000 --no-access-log
 
+# Run the chat worker with reload: claims queued runs and streams them (needs Postgres)
+worker:
+    uv run watchfiles --filter python 'python -m app.worker' app
+
+# Pull the image the run_code sandbox starts (SANDBOX_BACKEND=docker)
+sandbox-pull:
+    docker pull python:3.13-slim
+
 # Start the local Postgres container and wait until it is healthy
 db-up:
     docker compose up -d --wait

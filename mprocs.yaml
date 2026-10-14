@@ -5,6 +5,9 @@ procs:
   api:
     shell: just dev
     cwd: <CONFIG_DIR>/backend
+  worker:
+    shell: just worker
+    cwd: <CONFIG_DIR>/backend
   web:
     shell: just dev
     cwd: <CONFIG_DIR>/frontend

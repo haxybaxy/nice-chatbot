@@ -18,7 +18,7 @@ db-down:
 migrate:
     cd backend && just migrate
 
-# Serve everything in one terminal: Postgres, then the API on :8000 and the SPA on :3000 (Ctrl-C stops both)
+# Serve everything in one terminal: Postgres, then the API on :8000, the chat worker and the SPA on :3000 (Ctrl-C stops all)
 dev: db-up migrate
     #!/usr/bin/env bash
     set -euo pipefail
@@ -34,9 +34,10 @@ dev: db-up migrate
     }
     trap stop_group INT TERM EXIT
     (cd backend && just dev) &
+    (cd backend && just worker) &
     (cd frontend && just dev) &
     wait
 
-# Serve everything with mprocs — one pane per process (api, web, db logs), see mprocs.yaml
+# Serve everything with mprocs — one pane per process (api, worker, web, db logs), see mprocs.yaml
 mprocs: db-up migrate
     mprocs

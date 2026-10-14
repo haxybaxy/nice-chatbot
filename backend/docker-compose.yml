@@ -18,5 +18,49 @@ services:
       timeout: 3s
       retries: 10
 
+  # `docker compose --profile app up --build` runs the whole backend. The default profile is
+  # Postgres only (the API and the worker run from `just dev` with hot reload).
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/nicechatbot
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      target: worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/nicechatbot
+      RUN_MIGRATIONS: "false"
+      # LangGraph's Postgres checkpointer serializes state with msgpack; strict mode refuses
+      # anything that is not plain data.
+      LANGGRAPH_STRICT_MSGPACK: "true"
+    volumes:
+      # Lets the `run_code` tool start sandbox containers. Root-equivalent on the host: local
+      # development only. The socket is owned by root (gid 0) inside Docker Desktop / OrbStack VMs;
+      # set DOCKER_GID when yours differs.
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-0}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
