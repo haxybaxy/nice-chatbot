@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from base64 import b64encode
 from typing import cast
+from uuid import uuid4
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.core.config import attachment_settings
+from app.core.llm.attachments import StoredAttachment
 from app.core.llm.history import NOT_EXECUTED, StoredMessage, dump_turn, text_of_parts, to_langchain
 from tests.fakes_llm import LOCAL, OPUS, SONNET, scripted_turn
+from tests.sample_files import PNG_1X1
 
 
 def _user(text: str) -> StoredMessage:
@@ -165,3 +171,116 @@ class TestUserRows:
         restored = to_langchain([row, StoredMessage(role="user", parts=[])], target=OPUS)
         assert len(restored) == 1
         assert restored[0].content == "a\n\nb"
+
+
+# ── Attachments ──────────────────────────────────────────────────────────────
+
+
+def _attachment(
+    filename: str = "notes.txt",
+    *,
+    text: str | None = "hello",
+    text_chars: int | None = None,
+    error: str | None = None,
+    kind: str = "text",
+    media_type: str = "text/plain",
+    image_bytes: bytes | None = None,
+) -> StoredAttachment:
+    return StoredAttachment(
+        attachment_id=uuid4(),
+        filename=filename,
+        media_type=media_type,
+        kind=kind,
+        size_bytes=len(text or ""),
+        text=text,
+        text_chars=text_chars if text_chars is not None else (len(text) if text is not None else None),
+        extraction_error=error,
+        image_bytes=image_bytes,
+    )
+
+
+def _user_with(text: str, *attachments: StoredAttachment) -> StoredMessage:
+    parts: list[dict[str, object]] = [{"type": "text", "text": text}] if text else []
+    return StoredMessage(role="user", parts=parts, attachments=attachments)
+
+
+def _content(message: object) -> list[dict[str, object]]:
+    assert isinstance(message, HumanMessage)
+    assert isinstance(message.content, list)
+    return cast("list[dict[str, object]]", message.content)
+
+
+class TestAttachments:
+    def test_text_files_become_attachment_blocks_after_the_users_text(self) -> None:
+        [human] = to_langchain([_user_with("Read it", _attachment("a.txt", text="line 1\nline 2"))], target=OPUS)
+
+        assert _content(human) == [
+            {"type": "text", "text": "Read it"},
+            {
+                "type": "text",
+                "text": '<attachment name="a.txt" type="text/plain" chars="13">\nline 1\nline 2\n</attachment>',
+            },
+        ]
+
+    def test_images_are_image_blocks_for_vision_models_and_placeholders_otherwise(self) -> None:
+        image = _attachment("pic.png", text=None, kind="image", media_type="image/png", image_bytes=PNG_1X1)
+        rows = [_user_with("", image)]
+
+        [seen] = to_langchain(rows, target=OPUS)
+        [blind] = to_langchain(rows, target=LOCAL)
+
+        [block] = _content(seen)
+        assert (block["type"], block["mime_type"], block["base64"]) == (
+            "image",
+            "image/png",
+            b64encode(PNG_1X1).decode(),
+        )
+        assert _content(blind) == [
+            {"type": "text", "text": "[image attached: pic.png — this model cannot view images]"}
+        ]
+
+    def test_an_unreadable_file_is_an_empty_tag_with_the_reason(self) -> None:
+        broken = _attachment("scan.pdf", text=None, error="Encrypted PDF", kind="pdf", media_type="application/pdf")
+
+        [human] = to_langchain([_user_with("?", broken)], target=OPUS)
+
+        assert _content(human)[1] == {
+            "type": "text",
+            "text": '<attachment name="scan.pdf" type="application/pdf" unreadable="Encrypted PDF"/>',
+        }
+
+    def test_the_turn_budget_goes_to_the_latest_attachments_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(attachment_settings, "attachment_model_text_chars", 20)
+        older = _user_with("first", _attachment("old.txt", text="0123456789ABCDE"))  # 15 chars
+        newer = _user_with("second", _attachment("new.txt", text="abcdefghijklmno"))  # 15 chars
+
+        first, second = to_langchain([older, newer], target=OPUS)
+
+        assert (
+            _content(second)[1]["text"]
+            == '<attachment name="new.txt" type="text/plain" chars="15">\nabcdefghijklmno\n</attachment>'
+        )
+        assert _content(first)[1]["text"] == (
+            '<attachment name="old.txt" type="text/plain" chars="15">\n01234\n[truncated: 10 more characters]\n</attachment>'
+        )
+
+    def test_text_capped_at_upload_reports_the_full_count(self) -> None:
+        capped = _attachment("big.csv", text="kept", text_chars=1_000_000, media_type="text/csv")
+
+        [human] = to_langchain([_user_with("", capped)], target=OPUS)
+
+        assert _content(human) == [
+            {
+                "type": "text",
+                "text": '<attachment name="big.csv" type="text/csv" chars="1000000">\nkept\n[truncated: 999996 more characters]\n</attachment>',
+            }
+        ]
+
+    def test_names_are_escaped_and_rows_without_attachments_stay_strings(self) -> None:
+        quoted = _attachment('say "hi" <now>.txt', text="x")
+
+        plain, with_file = to_langchain([_user("plain"), _user_with("q", quoted)], target=OPUS)
+
+        assert isinstance(plain, HumanMessage)
+        assert plain.content == "plain"
+        assert 'name="say &quot;hi&quot; &lt;now&gt;.txt"' in str(_content(with_file)[1]["text"])

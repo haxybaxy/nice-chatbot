@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Sequence
+from base64 import b64encode
+from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import cast
@@ -23,13 +24,15 @@ from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.models import AttachmentKind
 from app.chat.models import ConversationModel, MessageModel, MessageRole, RunEventModel, RunMode, RunModel, RunStatus
 from app.chat.use_cases.run_assistant_turn import RUN_TIMEOUT_TEXT, SHUTDOWN_ERROR, SHUTDOWN_TEXT, RunAssistantTurn
 from app.core.agent.checkpointer import Checkpointer, NullCheckpointer
 from app.core.agent.graph import agent_input, build_agent_graph, run_config, stream_agent
 from app.core.agent.state import AgentLimits
 from app.core.agent.stream import StepCompleted, UIChunkEvent, map_graph_stream
-from app.core.config import agent_settings, chat_settings, research_settings
+from app.core.config import agent_settings, chat_settings, llm_settings, research_settings
+from app.core.llm.catalog import model_catalog
 from app.core.llm.errors import BUSY
 from app.core.llm.history import dump_turn
 from app.core.search import SearchResult
@@ -46,7 +49,9 @@ from tests.core.research.test_graph import PLAN, lead_turns, worker_turns
 from tests.core.research.test_graph import RESULTS as RESEARCH_RESULTS
 from tests.fakes import FakeListener
 from tests.fakes_llm import OPUS, FakeChatModelFactory, FakeSearchClient, FakeTracer, ScriptedChatModel, scripted_turn
+from tests.sample_files import PNG_1X1
 from tests.seeds import (
+    seed_attachment,
     seed_conversation,
     seed_message,
     seed_organization,
@@ -703,3 +708,137 @@ class TestNotLeased:
         assert (run.status, run.worker_id, run.last_seq) == ("running", WORKER, 0)
         assert chat.calls == []
         assert harness.tracer.run_contexts == []
+
+
+# ── Attachments ──────────────────────────────────────────────────────────────
+
+LOCAL_MODEL = "openai:llama3.3"
+
+
+@pytest.fixture
+def local_model(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """An OpenAI-compatible model in the process catalog (the suite's settings list only Claude):
+    the one kind of model that cannot see images, since ``LLM_OPENAI_SUPPORTS_VISION`` is off."""
+    monkeypatch.setattr(llm_settings, "openai_base_url", "http://localhost:11434/v1")
+    monkeypatch.setattr(llm_settings, "llm_models", [*llm_settings.llm_models, LOCAL_MODEL])
+    model_catalog.cache_clear()
+    yield LOCAL_MODEL
+    monkeypatch.undo()
+    model_catalog.cache_clear()
+
+
+async def _conversation_with_files(
+    db: AsyncSession, team: TeamModel, owner: UserModel, *, text: str
+) -> tuple[ConversationModel, MessageModel]:
+    """A titled conversation whose one user message carries a PNG and a Markdown file."""
+    conversation = await seed_conversation(db, team=team, creator=owner, title="Files")
+    message = await seed_message(
+        db, conversation=conversation, role=MessageRole.USER, position=0, parts=[], created_by=owner
+    )
+    chart = await seed_attachment(
+        db,
+        team=team,
+        uploader=owner,
+        filename="chart.png",
+        media_type="image/png",
+        kind=AttachmentKind.IMAGE,
+        data=PNG_1X1,
+        extracted_text=None,
+        message=message,
+    )
+    notes = await seed_attachment(
+        db,
+        team=team,
+        uploader=owner,
+        filename="notes.md",
+        media_type="text/markdown",
+        extracted_text="# Plan\nShip it",
+        message=message,
+    )
+    parts: list[JsonObject] = [{"type": "text", "text": text}] if text else []
+    for attachment in (chart, notes):
+        parts.append(
+            {
+                "type": "file",
+                "mediaType": attachment.media_type,
+                "filename": attachment.filename,
+                "url": attachment.url,
+                "attachmentId": str(attachment.id),
+            }
+        )
+    message.parts = parts
+    await db.flush()
+    return conversation, message
+
+
+NOTES_BLOCK = {
+    "type": "text",
+    "text": '<attachment name="notes.md" type="text/markdown" chars="14">\n# Plan\nShip it\n</attachment>',
+}
+
+
+def _human_content(chat: ScriptedChatModel) -> list[dict[str, object]]:
+    human = chat.calls[0][-1]
+    assert isinstance(human, HumanMessage)
+    assert isinstance(human.content, list)
+    return cast("list[dict[str, object]]", human.content)
+
+
+class TestAttachments:
+    async def test_a_vision_model_sees_the_image_and_the_text_file_as_blocks(
+        self, db_session: AsyncSession, harness: Harness, team: TeamModel, owner: UserModel
+    ) -> None:
+        conversation, _ = await _conversation_with_files(db_session, team, owner, text="What do these say?")
+        run = await seed_run(
+            db_session, conversation=conversation, requested_by=owner, status=RunStatus.RUNNING, worker_id=WORKER
+        )
+        chat = ScriptedChatModel(turns=[scripted_turn("A chart and a plan.")])
+
+        await harness.use_case(_factory(chat)).execute(run_id=run.id, worker_id=WORKER)
+
+        content = _human_content(chat)
+        assert content[0] == {"type": "text", "text": "What do these say?"}
+        assert (content[1]["type"], content[1]["mime_type"], content[1]["base64"]) == (
+            "image",
+            "image/png",
+            b64encode(PNG_1X1).decode(),
+        )
+        assert content[2] == NOTES_BLOCK
+        await db_session.refresh(run)
+        assert run.status == "succeeded"
+        assert _text((await _message(db_session, run)).parts) == "A chart and a plan."
+
+    async def test_a_model_without_vision_gets_a_placeholder_for_the_image(
+        self, db_session: AsyncSession, harness: Harness, team: TeamModel, owner: UserModel, local_model: str
+    ) -> None:
+        conversation, _ = await _conversation_with_files(db_session, team, owner, text="")
+        run = await seed_run(
+            db_session,
+            conversation=conversation,
+            requested_by=owner,
+            status=RunStatus.RUNNING,
+            model=local_model,
+            worker_id=WORKER,
+        )
+        chat = ScriptedChatModel(turns=[scripted_turn("I can read the notes.")])
+
+        await harness.use_case(_factory(chat)).execute(run_id=run.id, worker_id=WORKER)
+
+        content = _human_content(chat)
+        assert content == [
+            {"type": "text", "text": "[image attached: chart.png — this model cannot view images]"},
+            NOTES_BLOCK,
+        ]
+        await db_session.refresh(run)
+        assert (run.status, run.provider) == ("succeeded", "openai")
+
+    async def test_a_message_without_attachments_keeps_plain_string_content(
+        self, harness: Harness, run: RunModel
+    ) -> None:
+        chat = ScriptedChatModel(turns=[scripted_turn("Plain.")])
+
+        await harness.use_case(_factory(chat)).execute(run_id=run.id, worker_id=WORKER)
+
+        human = chat.calls[0][-1]
+        assert isinstance(human, HumanMessage)
+        assert human.content == QUESTION

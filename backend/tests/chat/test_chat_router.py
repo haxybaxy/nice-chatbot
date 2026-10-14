@@ -12,6 +12,7 @@ from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.models import AttachmentKind, AttachmentModel
 from app.chat.models import (
     ConversationModel,
     ConversationVisibility,
@@ -22,7 +23,7 @@ from app.chat.models import (
     RunStatus,
 )
 from app.chat.use_cases.stream_run_events import StreamRunEvents
-from app.core.config import chat_settings
+from app.core.config import attachment_settings, chat_settings
 from app.core.sse import SSE_PING, UI_MESSAGE_STREAM_HEADER
 from app.core.ui_stream import JsonObject
 from app.db.session import SessionScope
@@ -31,7 +32,9 @@ from app.teams.models import TeamModel
 from app.users.models import UserModel
 from tests.core.test_ui_stream import CANONICAL
 from tests.fakes import FakeListener
+from tests.sample_files import PNG_1X1
 from tests.seeds import (
+    seed_attachment,
     seed_conversation,
     seed_member,
     seed_message,
@@ -46,6 +49,21 @@ from tests.seeds import (
 type Authenticate = Callable[[UserModel], None]
 
 TEXT = {"type": "text", "text": "What changed in Python 3.14?"}
+
+
+def _file_part_in(attachment: AttachmentModel) -> JsonObject:
+    return {"type": "file", "attachmentId": str(attachment.id)}
+
+
+def _file_part(attachment: AttachmentModel) -> JsonObject:
+    """The persisted (and served) ``file`` part for an attachment."""
+    return {
+        "type": "file",
+        "mediaType": attachment.media_type,
+        "filename": attachment.filename,
+        "url": f"/api/attachments/{attachment.id}/content",
+        "attachmentId": str(attachment.id),
+    }
 
 
 @dataclass
@@ -172,6 +190,28 @@ class TestCreateConversation:
         stored_run = await db_session.get(RunModel, UUID(run["id"]))
         assert stored_run is not None
         assert (stored_run.status, stored_run.requested_by, stored_run.trace_id) == ("queued", owner.id, None)
+
+    async def test_first_message_may_carry_an_attachment(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        team: TeamModel,
+        owner: UserModel,
+        authenticate_as: Authenticate,
+    ) -> None:
+        upload = await seed_attachment(db_session, team=team, uploader=owner, filename="brief.txt")
+        authenticate_as(owner)
+
+        response = await client.post(
+            f"/api/teams/{team.id}/conversations",
+            json={"message": {"parts": [_file_part_in(upload), {"type": "text", "text": "Read this"}]}},
+        )
+
+        assert response.status_code == 201, response.text
+        [message] = await _messages(db_session, UUID(response.json()["id"]))
+        assert message.parts == [_file_part(upload), {"type": "text", "text": "Read this"}]
+        await db_session.refresh(upload)
+        assert upload.message_id == message.id
 
     async def test_private_conversation_without_message(
         self, client: AsyncClient, team: TeamModel, owner: UserModel, authenticate_as: Authenticate
@@ -483,6 +523,146 @@ class TestCreateMessage:
         response = await client.post(f"/api/conversations/{conversation.id}/messages", json={"parts": [TEXT] * 14})
 
         assert response.status_code == 422
+
+    async def test_file_parts_bind_the_uploads_and_are_persisted_in_order(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+        authenticate_as: Authenticate,
+    ) -> None:
+        report = await seed_attachment(
+            db_session,
+            team=team,
+            uploader=owner,
+            filename="report.pdf",
+            media_type="application/pdf",
+            kind=AttachmentKind.PDF,
+            data=b"%PDF-1.4",
+            extracted_text="Quarterly numbers",
+        )
+        chart = await seed_attachment(
+            db_session,
+            team=team,
+            uploader=owner,
+            filename="chart.png",
+            media_type="image/png",
+            kind=AttachmentKind.IMAGE,
+            data=PNG_1X1,
+            extracted_text=None,
+        )
+        authenticate_as(owner)
+        body = {"parts": [_file_part_in(report), {"type": "text", "text": "Summarize these"}, _file_part_in(chart)]}
+
+        response = await client.post(f"/api/conversations/{conversation.id}/messages", json=body)
+
+        assert response.status_code == 201, response.text
+        messages = await _messages(db_session, conversation.id)
+        assert messages[1].parts == [_file_part(report), {"type": "text", "text": "Summarize these"}, _file_part(chart)]
+        await db_session.refresh(report)
+        await db_session.refresh(chart)
+        assert report.message_id == chart.message_id == messages[1].id
+
+        detail = await client.get(f"/api/conversations/{conversation.id}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["messages"][1]["parts"] == messages[1].parts
+
+    async def test_a_file_alone_is_a_message_but_blank_text_is_not(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+        authenticate_as: Authenticate,
+    ) -> None:
+        upload = await seed_attachment(db_session, team=team, uploader=owner)
+        authenticate_as(owner)
+        url = f"/api/conversations/{conversation.id}/messages"
+
+        blank = await client.post(url, json={"parts": [{"type": "text", "text": "   "}]})
+        assert blank.status_code == 422
+
+        file_only = await client.post(url, json={"parts": [_file_part_in(upload), {"type": "text", "text": ""}]})
+        assert file_only.status_code == 201, file_only.text
+        messages = await _messages(db_session, conversation.id)
+        assert messages[1].parts == [_file_part(upload)]  # the empty text part is dropped
+
+    async def test_an_upload_that_is_not_yours_here_is_404(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        organization: OrganizationModel,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+        member: UserModel,
+        authenticate_as: Authenticate,
+    ) -> None:
+        other_team = await seed_team(db_session, organization=organization, name="Other", creator=owner)
+        elsewhere = await seed_attachment(db_session, team=other_team, uploader=owner)
+        someone_elses = await seed_attachment(db_session, team=team, uploader=member)
+        authenticate_as(owner)
+        url = f"/api/conversations/{conversation.id}/messages"
+
+        for attachment_id in (elsewhere.id, someone_elses.id, uuid4()):
+            response = await client.post(
+                url, json={"parts": [TEXT, {"type": "file", "attachmentId": str(attachment_id)}]}
+            )
+            assert response.status_code == 404, response.text
+
+        assert len(await _messages(db_session, conversation.id)) == 1  # nothing was stored
+        await db_session.refresh(elsewhere)
+        await db_session.refresh(someone_elses)
+        assert (elsewhere.message_id, someone_elses.message_id) == (None, None)
+
+    async def test_an_upload_already_sent_is_409(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+        authenticate_as: Authenticate,
+    ) -> None:
+        [earlier] = await _messages(db_session, conversation.id)
+        sent = await seed_attachment(db_session, team=team, uploader=owner, message=earlier)
+        authenticate_as(owner)
+
+        response = await client.post(
+            f"/api/conversations/{conversation.id}/messages", json={"parts": [TEXT, _file_part_in(sent)]}
+        )
+
+        assert response.status_code == 409
+        assert response.json()["details"] == {"attachmentId": str(sent.id)}
+        assert len(await _messages(db_session, conversation.id)) == 1
+
+    async def test_too_many_or_repeated_attachments_are_400(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+        authenticate_as: Authenticate,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(attachment_settings, "attachment_max_per_message", 1)
+        first = await seed_attachment(db_session, team=team, uploader=owner, filename="a.txt")
+        second = await seed_attachment(db_session, team=team, uploader=owner, filename="b.txt")
+        authenticate_as(owner)
+        url = f"/api/conversations/{conversation.id}/messages"
+
+        too_many = await client.post(url, json={"parts": [_file_part_in(first), _file_part_in(second)]})
+        assert too_many.status_code == 400
+        assert too_many.json()["details"] == {"max": 1, "count": 2}
+
+        monkeypatch.setattr(attachment_settings, "attachment_max_per_message", 5)
+        repeated = await client.post(url, json={"parts": [_file_part_in(first), _file_part_in(first)]})
+        assert repeated.status_code == 400
+        assert len(await _messages(db_session, conversation.id)) == 1
 
 
 class TestRuns:

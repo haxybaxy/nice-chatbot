@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.models import AttachmentBlobModel, AttachmentModel
+from app.attachments.use_cases.reap_orphan_attachments import ReapOrphanAttachments
 from app.chat.models import ConversationModel, MessageModel, MessageRole, RunEventModel, RunModel, RunStatus
 from app.chat.use_cases.claim_run import ClaimRun
 from app.chat.use_cases.finish_run import FinishRun
@@ -24,6 +26,7 @@ from app.teams.models import TeamModel
 from app.users.models import UserModel
 from tests.core.test_ui_stream import CANONICAL
 from tests.seeds import (
+    seed_attachment,
     seed_conversation,
     seed_message,
     seed_organization,
@@ -276,3 +279,37 @@ class TestOneActiveRunPerConversation:
         # The savepoint rolled back; the transaction is usable and finished runs are not limited.
         done = await seed_run(db_session, conversation=conversation, requested_by=owner, status=RunStatus.SUCCEEDED)
         assert done.id != queued.id
+
+
+class TestOrphanAttachments:
+    async def test_sweeps_old_unbound_uploads_and_those_a_deleted_conversation_left_behind(
+        self,
+        db_session: AsyncSession,
+        sessions: SessionScope,
+        team: TeamModel,
+        conversation: ConversationModel,
+        owner: UserModel,
+    ) -> None:
+        old_at = datetime.now(UTC) - timedelta(hours=25)
+        abandoned = await seed_attachment(db_session, team=team, uploader=owner, filename="old.txt", created_at=old_at)
+        fresh = await seed_attachment(db_session, team=team, uploader=owner, filename="fresh.txt")
+        [message] = (await db_session.execute(select(MessageModel))).scalars().all()
+        sent = await seed_attachment(
+            db_session, team=team, uploader=owner, filename="sent.txt", message=message, created_at=old_at
+        )
+        reap = ReapOrphanAttachments(sessions)
+
+        assert await reap.execute() == 1
+
+        remaining = (await db_session.execute(select(AttachmentModel.id))).scalars().all()
+        assert set(remaining) == {fresh.id, sent.id}
+        blobs = (await db_session.execute(select(AttachmentBlobModel.attachment_id))).scalars().all()
+        assert set(blobs) == {fresh.id, sent.id}
+        assert abandoned.id not in remaining
+
+        # Deleting the conversation cascades to its messages, which unbinds the attachment (SET NULL):
+        # the next sweep removes it as well, while the fresh upload is still young enough to stay.
+        await db_session.delete(conversation)
+        await db_session.flush()
+        assert await reap.execute() == 1
+        assert (await db_session.execute(select(AttachmentModel.id))).scalars().all() == [fresh.id]

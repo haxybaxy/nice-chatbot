@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.models import AttachmentModel
 from app.chat.models import ConversationModel, MessageModel, MessageRole, RunEventModel, RunModel, RunStatus
 from app.chat.use_cases.run_assistant_turn import SHUTDOWN_ERROR
 from app.core.agent.checkpointer import NullCheckpointer
@@ -25,7 +26,15 @@ from app.worker import Worker, WorkerDeps, WorkerOptions
 from tests.chat.test_run_assistant_turn import PacedChatModel
 from tests.fakes import FakeListener
 from tests.fakes_llm import FakeChatModelFactory, FakeSearchClient, FakeTracer, ScriptedChatModel, scripted_turn
-from tests.seeds import seed_conversation, seed_message, seed_organization, seed_run, seed_team, seed_user
+from tests.seeds import (
+    seed_attachment,
+    seed_conversation,
+    seed_message,
+    seed_organization,
+    seed_run,
+    seed_team,
+    seed_user,
+)
 
 WORKER = "test-host:7"
 OPTIONS = WorkerOptions(concurrency=2, poll_interval_s=0.05, reaper_interval_s=0.1, shutdown_grace_s=5)
@@ -105,6 +114,9 @@ class TestServe:
             worker_id="dead:1",
             heartbeat_at=datetime.now(UTC) - timedelta(minutes=5),
         )
+        orphan = await seed_attachment(
+            db_session, team=team, uploader=owner, created_at=datetime.now(UTC) - timedelta(days=2)
+        )
         chat = ScriptedChatModel(turns=[scripted_turn("answer one"), scripted_turn("answer two")])
         stop = asyncio.Event()
         worker = Worker(WORKER, _deps(test_scope, fake_listener, chat), stop=stop, options=OPTIONS)
@@ -118,8 +130,10 @@ class TestServe:
         await db_session.refresh(queued)
         await db_session.refresh(lost)
         assert (queued.worker_id, queued.attempt) == (WORKER, 1)
-        # The reaper re-queued the lost run and this worker ran it as attempt 2 from scratch.
+        # The reaper re-queued the lost run and this worker ran it as attempt 2 from scratch;
+        # the same reaper pass swept the day-old upload nobody sent.
         assert (lost.worker_id, lost.attempt, lost.error) == (WORKER, 2, None)
+        assert await db_session.get(AttachmentModel, orphan.id, populate_existing=True) is None
         for run in (queued, lost):
             events = await _events(db_session, run)
             assert (events[0], events[-1]) == ("start", "finish")
