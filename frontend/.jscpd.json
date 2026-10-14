@@ -12,6 +12,9 @@
     "**/__tests__/**",
     "**/dist/**",
     "**/node_modules/**",
-    "**/shared/api/generated/**"
+    "**/shared/api/generated/**",
+    "**/shared/components/ui/**",
+    "**/shared/components/ai-elements/**",
+    "**/shared/hooks/use-mobile.ts"
   ]
 }

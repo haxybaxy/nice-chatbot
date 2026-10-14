@@ -4,7 +4,20 @@
   // fallow's `*` crosses `/`, so `src/features/*/index.ts` would also match
   // `src/features/auth/types/index.ts`. A new feature adds its barrel here AND to the
   // `feature-api` zone below; forgetting fails loudly as an `app → features/<name>` violation.
-  "entry": ["src/features/auth/index.ts", "src/features/home/index.ts"],
+  // The vendored registry code (shadcn `ui/`, AI Elements, `use-mobile`) is an entry set too,
+  // mirroring knip.json: it is a component library the features consume piecemeal, so a
+  // sub-component nothing imports yet is not dead code (see CLAUDE.md, Quality tooling notes).
+  "entry": [
+    "src/features/auth/index.ts",
+    "src/features/home/index.ts",
+    "src/shared/components/ui/*.tsx",
+    "src/shared/components/ai-elements/*.tsx",
+    "src/shared/hooks/use-mobile.ts"
+  ],
+
+  // Mirrors knip.json. `@ai-sdk/react` (`useChat`) is installed with `ai` and first imported by
+  // the chat feature's hooks; drop it from here when that import exists.
+  "ignoreDependencies": ["@ai-sdk/react"],
 
   // Mirrors knip.json: unused exports/types are trimmed, not blocked. Everything else
   // (unused files, unlisted/unused/unresolved dependencies, cycles, boundaries) is an error.
@@ -13,17 +26,32 @@
     "unused-types": "warn"
   },
 
-  // Mirrors .jscpd.json: tests and the generated wire types are not clone material.
+  // Mirrors .jscpd.json: tests, the generated wire types and vendored registry code (shadcn
+  // `ui/`, AI Elements, `use-mobile`) are not clone material.
   "duplicates": {
-    "ignore": ["src/shared/api/generated/**", "**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"]
+    "ignore": [
+      "src/shared/api/generated/**",
+      "src/shared/components/ui/**",
+      "src/shared/components/ai-elements/**",
+      "src/shared/hooks/use-mobile.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/__tests__/**"
+    ]
   },
 
   // Cyclomatic (20) and cognitive (15) ceilings are fallow's defaults. The CRAP gate is off:
   // it needs Istanbul coverage to mean anything, `just check` runs without tests, and coverage
-  // is reporting-only in this project (vitest.config.ts).
+  // is reporting-only in this project (vitest.config.ts). Vendored registry code is kept as
+  // shipped (eslint.config.mjs VENDORED_FILES), so it is outside the ceilings too.
   "health": {
     "maxCrap": 10000,
-    "ignore": ["src/shared/api/generated/**"]
+    "ignore": [
+      "src/shared/api/generated/**",
+      "src/shared/components/ui/**",
+      "src/shared/components/ai-elements/**",
+      "src/shared/hooks/use-mobile.ts"
+    ]
   },
 
   // Architecture boundaries — the "features are imported only through index.ts" rule from

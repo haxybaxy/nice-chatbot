@@ -31,7 +31,10 @@ export default defineConfig({
         "src/**/__tests__/**",
         "src/**/*.test.{ts,tsx}",
         "src/**/*.d.ts",
+        // Vendored registry code (see eslint.config.mjs VENDORED_FILES).
         "src/shared/components/ui/**",
+        "src/shared/components/ai-elements/**",
+        "src/shared/hooks/use-mobile.ts",
         "src/**/types/**",
       ],
     },

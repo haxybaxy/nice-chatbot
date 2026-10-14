@@ -3,6 +3,12 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+/* Streamdown (MessageResponse / ReasoningContent in shared/components/ai-elements) ships its
+   markdown styles as Tailwind classes inside its dist; Tailwind only emits them when told to
+   scan those files. Paths are relative to this file. Add a line per installed plugin. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

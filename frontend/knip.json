@@ -1,8 +1,20 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["index.html", "src/features/*/index.ts"],
+  "entry": [
+    "index.html",
+    "src/features/*/index.ts",
+    "src/shared/components/ui/*.tsx",
+    "src/shared/components/ai-elements/*.tsx",
+    "src/shared/hooks/use-mobile.ts"
+  ],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignoreDependencies": ["@fontsource-variable/geist", "shadcn", "tw-animate-css", "tailwindcss"],
+  "ignoreDependencies": [
+    "@fontsource-variable/geist",
+    "shadcn",
+    "tw-animate-css",
+    "tailwindcss",
+    "@ai-sdk/react"
+  ],
   "vite": true,
   "vitest": true,
   "rules": {

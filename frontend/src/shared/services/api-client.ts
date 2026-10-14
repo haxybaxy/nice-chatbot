@@ -1,37 +1,28 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 
+import { ApiError, SESSION_ENDED_MESSAGE, apiErrorFromResponse } from "./api-error";
 import { refreshAuthToken } from "./auth-bridge";
 import { isDefinitiveAuthFailure } from "./refresh-error";
 import { tokenStorage } from "./token-storage";
-import type {
-  BodylessPaths,
-  HttpMethod,
-  PathParams,
-  PathsWith,
-  QueryParams,
-  RequestBody,
-  Schema,
-  SuccessBody,
-} from "../api/types";
+import {
+  type PathOption,
+  type QueryOption,
+  type RuntimeRequestOptions,
+  substitutePathParams,
+} from "../api/request-options";
+import type { BodylessPaths, HttpMethod, PathsWith, RequestBody, SuccessBody } from "../api/types";
 import { API_ENDPOINTS } from "../config/api-endpoints";
+
+// `ApiError` lives in ./api-error (shared with the SSE client); re-exported for the import sites
+// that know it as the client's error.
+export { ApiError } from "./api-error";
 
 // ── Path-typed call signatures ───────────────────────────────────────────────────────────────
 //
 // `apiClient.get(path)`, `.post(path, body)`, … take a spec path (`API_ENDPOINTS.*`) and derive
 // the body, path/query params and result from the generated OpenAPI types. There is no free type
-// parameter, so a hand-written wire shape cannot be passed in or asserted out.
-
-/** `path` is required exactly when the operation has `{segments}`. */
-type PathOption<P extends PathsWith<M>, M extends HttpMethod> = [PathParams<P, M>] extends [never]
-  ? { path?: undefined }
-  : { path: PathParams<P, M> };
-
-/** `query` exists only when the operation declares query params; optional when all of them are. */
-type QueryOption<P extends PathsWith<M>, M extends HttpMethod> = [QueryParams<P, M>] extends [never]
-  ? { query?: undefined }
-  : object extends QueryParams<P, M>
-    ? { query?: QueryParams<P, M> }
-    : { query: QueryParams<P, M> };
+// parameter, so a hand-written wire shape cannot be passed in or asserted out. `PathOption` /
+// `QueryOption` are shared with the SSE client (`../api/request-options`).
 
 type RequestOptions<P extends PathsWith<M>, M extends HttpMethod> = {
   /** Skip the Authorization header and the auto-refresh on 401 (public endpoints). */
@@ -65,93 +56,14 @@ type BodyArgs<P extends PathsWith<M>, M extends HttpMethod> = P extends unknown
   : never;
 
 /** The type-erased view `request()` works with. */
-interface RuntimeOptions {
+interface RuntimeOptions extends RuntimeRequestOptions {
   skipAuth?: boolean;
-  path?: Record<string, string>;
-  query?: Record<string, unknown>;
-}
-
-/** Replace every `{name}` in a spec path with its encoded value. */
-function substitutePathParams(path: string, params: Record<string, string> | undefined): string {
-  return path.replace(/\{([^}]+)\}/g, (_match, name: string) => {
-    const value = params?.[name];
-    if (value === undefined) {
-      throw new Error(`Missing path parameter "${name}" for ${path}`);
-    }
-    return encodeURIComponent(value);
-  });
 }
 
 // ── Error envelope ───────────────────────────────────────────────────────────────────────────
 
-type ErrorEnvelope = Schema<"ErrorOut">;
-
-/**
- * Runtime check that `unknown` response data is the backend's error envelope. The key names are
- * taken from the generated type, so renaming a field on the backend fails `tsc` here.
- */
-function isErrorEnvelope(data: unknown): data is ErrorEnvelope {
-  if (typeof data !== "object" || data === null) {
-    return false;
-  }
-  const candidate = data as Record<keyof ErrorEnvelope, unknown>;
-  return (
-    typeof candidate.error === "string" &&
-    typeof candidate.code === "string" &&
-    typeof candidate.statusCode === "number" &&
-    typeof candidate.correlationId === "string"
-  );
-}
-
-/** Best-effort message from a NON-envelope body (a proxy or CDN error page). */
-function readFallbackMessage(data: unknown): string | undefined {
-  if (typeof data !== "object" || data === null) {
-    return undefined;
-  }
-  for (const key of ["error", "message"]) {
-    const value = (data as Record<string, unknown>)[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Error carrying the HTTP status plus the backend's error envelope (`ErrorOut`), thrown by the
- * response interceptor in place of a vanilla `Error`. Callers that need to branch on status
- * (404 / 409 / 400) can read it directly; the global react-query retry config in
- * `providers/query-provider.tsx` keys off `"status" in error` for the 4xx-no-retry check.
- *
- * `detail`, `code` and `correlationId` come from the envelope
- * (`{error, code, statusCode, correlationId, details?}`). All are present on every backend error
- * response, but stay optional here because an ApiError can also be raised client-side (see the
- * 401 path below), where there is no envelope to read them from. `code` is the generated
- * `ErrorCode` union; at runtime it is only checked to be a string — the OpenAPI snapshot guards
- * are what keep the union honest.
- */
-export class ApiError extends Error {
-  readonly status: number;
-  /** The backend's `error` message, when the response carried an envelope. */
-  readonly detail: string | undefined;
-  /** Machine-readable cause (`ErrorOut.code`). Prefer branching on this over parsing `message`. */
-  readonly code: ErrorEnvelope["code"] | undefined;
-  /** The id to quote in a bug report — ties this failure to a backend trace. */
-  readonly correlationId: ErrorEnvelope["correlationId"] | undefined;
-
-  constructor(
-    status: number,
-    message: string,
-    envelope?: { detail?: string; code?: ErrorEnvelope["code"]; correlationId?: string }
-  ) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.detail = envelope?.detail;
-    this.code = envelope?.code;
-    this.correlationId = envelope?.correlationId;
-  }
-}
+// `isErrorEnvelope`, `ApiError` and `SESSION_ENDED_MESSAGE` moved to ./api-error so the SSE client
+// raises the very same error; `toApiError` below only adds the axios-specific cases.
 
 // Extend axios config to include our custom metadata
 declare module "axios" {
@@ -183,28 +95,14 @@ function onTokenRefreshFailed() {
   refreshSubscribers = [];
 }
 
-const SESSION_ENDED_MESSAGE = "Your session has ended. Please sign in again.";
-
 /**
  * Translate a non-401 axios failure into an `ApiError` (or a plain `Error` for network
- * failures). The backend wraps every error in one envelope, so its `error` is the message to
- * show; a bare `error`/`message` string is kept as a fallback for non-envelope responses (a
- * proxy, a CDN).
+ * failures). The envelope → message mapping is `apiErrorFromResponse` (./api-error).
  */
 function toApiError(error: AxiosError): Error {
   if (error.response) {
     const { status, data } = error.response;
-    const envelope = isErrorEnvelope(data) ? data : undefined;
-    const detail = envelope?.error ?? readFallbackMessage(data);
-    const message =
-      status >= 500
-        ? "Server error. Please try again later."
-        : (detail ?? `Request failed (${status})`);
-    return new ApiError(status, message, {
-      detail,
-      code: envelope?.code,
-      correlationId: envelope?.correlationId,
-    });
+    return apiErrorFromResponse(status, data);
   }
 
   if (error.code === "ECONNABORTED") {
