@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import re
 from functools import cache
-from typing import Annotated, Protocol, cast
+from typing import Protocol, cast
 
-from fastapi import Depends
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: TID251
 from psycopg import AsyncConnection, sql
@@ -134,10 +133,3 @@ def build_checkpointer() -> Checkpointer:
 @cache
 def default_checkpointer() -> Checkpointer:
     return build_checkpointer()
-
-
-async def get_checkpointer() -> Checkpointer:
-    return default_checkpointer()
-
-
-CheckpointerDep = Annotated[Checkpointer, Depends(get_checkpointer)]

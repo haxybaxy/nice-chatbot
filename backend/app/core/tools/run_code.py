@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.core.config import sandbox_settings
 from app.core.exceptions import AppError
 from app.core.sandbox import SandboxRun
 from app.core.tools.base import Tool, ToolCallContext, ToolResult, ToolSpec
@@ -24,6 +25,7 @@ async def _run(call: ToolCallContext, args: RunCodeIn) -> ToolResult:
     ctx = call.ctx
     if ctx.sandbox is None:
         raise AppError.service_unavailable("Code execution is not available")
+    timeout_s = args.timeout_s or sandbox_settings.sandbox_timeout_s
     call.write(
         data_chunk(
             "tool-progress",
@@ -32,18 +34,16 @@ async def _run(call: ToolCallContext, args: RunCodeIn) -> ToolResult:
             transient=True,
         )
     )
-    with ctx.tracer.span(
-        "sandbox.run", kind="tool", input={"language": args.language, "timeout_s": args.timeout_s}
-    ) as span:
+    with ctx.tracer.span("sandbox.run", kind="tool", input={"language": args.language, "timeout_s": timeout_s}) as span:
         result = await ctx.sandbox.run(
-            SandboxRun(language=args.language, code=args.code, timeout_s=args.timeout_s), cancel=ctx.cancel
+            SandboxRun(language=args.language, code=args.code, timeout_s=timeout_s), cancel=ctx.cancel
         )
         span.update(
             output={"exit_code": result.exit_code, "duration_ms": result.duration_ms, "timed_out": result.timed_out}
         )
     status = f"exit code {result.exit_code} in {result.duration_ms} ms"
     if result.timed_out:
-        status += f" (timed out after {args.timeout_s}s)"
+        status += f" (timed out after {timeout_s}s)"
     if result.truncated:
         status += " (output truncated)"
     content = "\n\n".join([status, _section("stdout", result.stdout), _section("stderr", result.stderr)])

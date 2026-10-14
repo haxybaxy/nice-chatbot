@@ -8,9 +8,9 @@ never route them through ``BaseSchema`` (its ``str_strip_whitespace`` would eat 
 delta).
 
 ``UI_CHUNK_ADAPTER`` validates untrusted chunk dicts (replayed rows, custom-stream payloads).
-``EventSink`` is the Protocol the agent loop, the tools and the research graph emit through;
 ``BufferedEventSink`` coalesces consecutive deltas and hands batches to an injected writer (the
-worker persists them and notifies the SSE readers). ``CancelToken`` is the cooperative cancel
+worker persists them and notifies the SSE readers); the tools and the research graph emit through
+LangGraph's stream writer and reach it via the stream mapper. ``CancelToken`` is the cooperative cancel
 signal shared by the loop, the tools and the sandbox.
 """
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Literal, NotRequired, Protocol, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from pydantic import Discriminator, Tag, TypeAdapter
 
@@ -215,13 +215,6 @@ def source_url_chunk(source_id: str, url: str, title: str | None = None) -> Sour
 
 
 # ── Sink ─────────────────────────────────────────────────────────────────────
-
-
-class EventSink(Protocol):
-    """Where a run's chunks go, in order. ``flush`` forces buffered deltas out (step boundaries)."""
-
-    async def emit(self, chunk: UIChunk) -> None: ...
-    async def flush(self) -> None: ...
 
 
 class CancelToken:

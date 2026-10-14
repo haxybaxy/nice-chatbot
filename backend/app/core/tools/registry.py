@@ -20,9 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from functools import cache
-from typing import Annotated
 
-from fastapi import Depends
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.prebuilt import ToolNode, ToolRuntime
 from langgraph.prebuilt.tool_node import ToolInvocationError
@@ -125,10 +123,3 @@ def build_tool_node(tools: Sequence[BaseTool]) -> ToolNode:
 @cache
 def default_tool_registry() -> ToolRegistry:
     return ToolRegistry([WEB_SEARCH, WEB_FETCH, RUN_CODE])
-
-
-async def get_tool_registry() -> ToolRegistry:
-    return default_tool_registry()
-
-
-ToolsDep = Annotated[ToolRegistry, Depends(get_tool_registry)]

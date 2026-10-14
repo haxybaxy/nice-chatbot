@@ -1,4 +1,4 @@
-"""Offline stand-ins for the LLM layer, the tool clients, the tracer and the event sink.
+"""Offline stand-ins for the LLM layer, the tool clients and the tracer.
 
 ``ScriptedChatModel`` plays back ``AIMessage`` turns: ``_generate`` returns the next one whole,
 ``_astream`` cuts it into word-level ``AIMessageChunk``s (text, reasoning, tool-call fragments)
@@ -35,7 +35,7 @@ from app.core.observability import SpanHandle, SpanKind, SpanLevel
 from app.core.sandbox import SandboxResult, SandboxRun
 from app.core.search import ExtractDepth, ExtractedPage, SearchQuery, SearchResult
 from app.core.tools.base import RunContext, ToolBudget
-from app.core.ui_stream import CancelToken, JsonObject, UIChunk
+from app.core.ui_stream import CancelToken, JsonObject
 
 _WORDS = re.compile(r"\S+\s*|\s+")
 
@@ -309,7 +309,7 @@ class FakeSandboxClient:
         return self.results.pop(0) if len(self.results) > 1 else self.results[0]
 
 
-# ── Tracer and sink ──────────────────────────────────────────────────────────
+# ── Tracer ───────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -375,21 +375,6 @@ class FakeTracer:
 
     def shutdown(self) -> None:
         self.shutdowns += 1
-
-
-@dataclass
-class RecordingSink:
-    chunks: list[UIChunk] = field(default_factory=list)
-    flushes: int = 0
-
-    async def emit(self, chunk: UIChunk) -> None:
-        self.chunks.append(chunk)
-
-    async def flush(self) -> None:
-        self.flushes += 1
-
-    def types(self) -> list[str]:
-        return [chunk["type"] for chunk in self.chunks]
 
 
 # ── Run context ──────────────────────────────────────────────────────────────

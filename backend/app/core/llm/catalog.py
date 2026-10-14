@@ -119,9 +119,6 @@ class ModelCatalog:
         """The picker: only models whose provider has credentials."""
         return [spec for spec in self._specs.values() if self._configured[spec.provider]]
 
-    def is_available(self, spec: ModelSpec) -> bool:
-        return self._configured[spec.provider]
-
     def get(self, model_id: str) -> ModelSpec:
         """Resolve a client-supplied id: 400 when unknown, 503 when its provider is not configured."""
         spec = self._specs.get(model_id)
@@ -146,6 +143,20 @@ class ModelCatalog:
                 if candidate.provider == spec.provider and candidate.tier == tier:
                     return candidate
         return spec
+
+
+def estimate_cost_usd(
+    spec: ModelSpec, *, input_tokens: int, output_tokens: int, cache_read_tokens: int = 0
+) -> float | None:
+    """List-price cost of a run on ``spec`` (cache reads at the provider's discount), or ``None`` when
+    the prices are unknown. An operator's estimate for the logs, never billing."""
+    if spec.input_usd_per_mtok is None or spec.output_usd_per_mtok is None:
+        return None
+    uncached = max(0, input_tokens - cache_read_tokens)
+    cached = cache_read_tokens * spec.cache_read_multiplier
+    return round(
+        ((uncached + cached) * spec.input_usd_per_mtok + output_tokens * spec.output_usd_per_mtok) / 1_000_000, 6
+    )
 
 
 @cache

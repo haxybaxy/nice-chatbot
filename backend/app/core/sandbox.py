@@ -20,9 +20,7 @@ import uuid
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
 from functools import cache
-from typing import Annotated, Literal, Protocol
-
-from fastapi import Depends
+from typing import Literal, Protocol
 
 from app.core.config import sandbox_settings
 from app.core.exceptions import AppError
@@ -241,10 +239,3 @@ def default_sandbox_client() -> SandboxClient | None:
         pids_limit=sandbox_settings.sandbox_pids_limit,
         max_output_bytes=sandbox_settings.sandbox_max_output_bytes,
     )
-
-
-async def get_sandbox_client() -> SandboxClient | None:
-    return default_sandbox_client()
-
-
-SandboxDep = Annotated[SandboxClient | None, Depends(get_sandbox_client)]

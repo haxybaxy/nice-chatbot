@@ -19,10 +19,9 @@ from __future__ import annotations
 from collections.abc import Generator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from functools import cache
-from typing import Annotated, Literal, Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
-from fastapi import Depends
 from langchain_core.callbacks import BaseCallbackHandler
 from langfuse import Langfuse, propagate_attributes  # noqa: TID251
 from langfuse.langchain import CallbackHandler  # noqa: TID251
@@ -260,10 +259,3 @@ def default_tracer() -> Tracer:
         environment=settings.environment,
         release=settings.version,
     )
-
-
-async def get_tracer() -> Tracer:
-    return default_tracer()
-
-
-TracerDep = Annotated[Tracer, Depends(get_tracer)]

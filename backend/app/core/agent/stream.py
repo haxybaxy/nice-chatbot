@@ -91,6 +91,10 @@ async def map_graph_stream(
         for item in mapper.finish(error=app_error):
             yield item
     finally:
+        # The consumer may stop early (wall clock, worker shutdown): settle the pending read, then
+        # close the graph stream so LangGraph cancels the node it was running.
         cancel_task.cancel()
         if next_task is not None and not next_task.done():
             next_task.cancel()
+            await asyncio.gather(next_task, return_exceptions=True)
+        await _close(events)

@@ -7,7 +7,7 @@ unsloth) go through ``ChatOpenAI`` with ``base_url``. Claude is never routed thr
 
 :class:`BuiltModel` is what the agent graph consumes: the unbound model, the per-call kwargs the
 provider needs, how the system prompt must be shaped, and how to bind tools. ``ChatModelFactory``
-is the DI seam (``LlmDep`` / the worker's ``llm`` argument); tests inject
+is the DI seam (the worker's ``llm`` argument); tests inject
 ``tests.fakes_llm.FakeChatModelFactory``.
 """
 
@@ -19,10 +19,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
-from typing import Annotated, Literal, Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
-from fastapi import Depends
 from langchain_anthropic import ChatAnthropic  # noqa: TID251
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage
@@ -285,10 +284,3 @@ class DefaultChatModelFactory:
 @cache
 def default_chat_model_factory() -> ChatModelFactory:
     return DefaultChatModelFactory(ProviderConfig.from_settings())
-
-
-async def get_chat_model_factory() -> ChatModelFactory:
-    return default_chat_model_factory()
-
-
-LlmDep = Annotated[ChatModelFactory, Depends(get_chat_model_factory)]

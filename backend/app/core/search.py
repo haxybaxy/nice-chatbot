@@ -12,10 +12,9 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
-from typing import Annotated, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 
 import httpx
-from fastapi import Depends
 
 from app.core.config import search_settings
 from app.core.exceptions import AppError
@@ -221,15 +220,8 @@ def default_search_client() -> TavilySearchClient | None:
     )
 
 
-async def get_search_client() -> SearchClient | None:
-    return default_search_client()
-
-
 async def close_search_client() -> None:
-    """Release the HTTP connection pool; called from the API lifespan and the worker's shutdown."""
+    """Release the HTTP connection pool at the worker's shutdown."""
     client = default_search_client()
     if client is not None:
         await client.aclose()
-
-
-SearchDep = Annotated[SearchClient | None, Depends(get_search_client)]

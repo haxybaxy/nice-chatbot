@@ -223,8 +223,7 @@ DEP002 = [
 # ── vulture ──────────────────────────────────────────────────────────────────
 
 [tool.vulture]
-# vulture_whitelist.py is TEMPORARY: seams whose consumers land with the chat feature.
-paths = ["app", "vulture_whitelist.py"]
+paths = ["app"]
 # 60 reports unused functions/classes/methods — the point of running vulture. Pydantic and ORM
 # field declarations look "unused" to it (they are read by serialization / the ORM), so the
 # schema and model modules are excluded rather than whitelisting every field; ruff still
@@ -267,6 +266,14 @@ ignore_names = [
     # called from outside app/ (alembic env, tests)
     "register_all_models",
     "lifespan",
+    # LangGraph state keys (TypedDict fields in app/core/agent/state.py and app/core/research/types.py):
+    # the nodes read and write them by string key.
+    "model_calls",
+    "tool_calls_made",
+    "final_answer_only",
+    "citations",
+    # ChatAnthropic's pydantic field, set after construction in app/core/llm/chat_models.py.
+    "model_kwargs",
     # AI SDK wire keys on the UI chunk TypedDicts (app/core/ui_stream.py): read by key, never by
     # attribute, so vulture cannot see the use.
     "messageId",

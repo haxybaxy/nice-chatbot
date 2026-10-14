@@ -70,7 +70,9 @@ class WebFetchOut(BaseSchemaOut):
 class RunCodeIn(BaseSchema):
     language: Literal["python", "bash"] = Field(description="Interpreter: python (3.13) or bash.")
     code: str = Field(max_length=20000, description="The program; read from stdin, so print what you need to see.")
-    timeout_s: int = Field(default=30, ge=1, le=120, description="Wall-clock limit in seconds (1 to 120).")
+    timeout_s: int = Field(
+        default=0, ge=0, le=120, description="Wall-clock limit in seconds (1 to 120); 0 for the server default."
+    )
 
 
 class RunCodeOut(BaseSchemaOut):

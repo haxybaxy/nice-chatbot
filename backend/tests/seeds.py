@@ -111,6 +111,9 @@ async def seed_message(
     parts: list[JsonObject] | None = None,
     run: RunModel | None = None,
     created_by: UserModel | None = None,
+    provider_messages: list[JsonObject] | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> MessageModel:
     message = MessageModel(
         conversation_id=conversation.id,
@@ -119,6 +122,11 @@ async def seed_message(
         role=role.value,
         position=position,
         parts=parts if parts is not None else [{"type": "text", "text": f"message {position}"}],
+        provider=run.provider if run is not None else None,
+        model=run.model if run is not None else None,
+        provider_messages=provider_messages,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
     db.add(message)
     await db.flush()
