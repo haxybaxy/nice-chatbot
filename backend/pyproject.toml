@@ -1,7 +1,7 @@
 [project]
-name = "acme-backend"
+name = "nicechatbot-backend"
 version = "0.1.0"
-description = "Acme backend API (FastAPI, async SQLAlchemy 2, AWS Cognito)"
+description = "Nice Chatbot backend API (FastAPI, async SQLAlchemy 2, AWS Cognito)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -50,7 +50,7 @@ dev = [
     # Structural-health gate. PyPI lags the brew binary; see CLAUDE.md.
     "sentrux>=0.1.6",
     "boto3-stubs[cognito-idp,sesv2]>=1.43.0",
-    # awscrt lets botocore resolve `aws login` session profiles (AWS_PROFILE=acme just dev).
+    # awscrt lets botocore resolve `aws login` session profiles (AWS_PROFILE=nicechatbot just dev).
     # Deployed backends use an IAM role, so it is dev-only.
     "botocore[crt]>=1.43.0",
     "pre-commit>=4.6.2",

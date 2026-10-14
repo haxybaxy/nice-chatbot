@@ -164,7 +164,7 @@ library forces a rule off, scope it to that file with a commented header.
   `TestClient` and `async_asgi_testclient` are banned imports.
 - Seed with `tests/seeds.py` helpers (async, session first, flush, return the model). Rows seeded
   before the request behave like committed data: a failing request rolls back only its own work.
-- Real Postgres from `docker compose` (`acme_test`); the schema is rebuilt from `Base.metadata`
+- Real Postgres from `docker compose` (`nicechatbot_test`); the schema is rebuilt from `Base.metadata`
   when the `engine` fixture is first used; each test runs in a rolled-back transaction. Suite
   runs serially. `tests/guards/` never requests `engine`, so `just guards` needs no Docker.
 - Deprecated pydantic/SQLAlchemy APIs are errors (`filterwarnings`), so v1-style `json_encoders`,

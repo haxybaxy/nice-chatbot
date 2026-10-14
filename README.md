@@ -1,4 +1,4 @@
-# Acme
+# Nice Chatbot
 
 Full-stack boilerplate for an app on AWS. Every convention is enforced by a gate (ruff bans,
 `tests/guards`, eslint + fallow, pre-commit, CI), not just documented.
@@ -22,15 +22,15 @@ Everything project-specific is a placeholder:
 
 | Placeholder    | Stands for          | Used as                                                                                  |
 | -------------- | ------------------- | ---------------------------------------------------------------------------------------- |
-| `acme`         | project slug        | database names, Docker Compose project, Python package, AWS resource prefix, `AWS_PROFILE` |
-| `Acme`         | display name        | API title, SES sender name, page title and app header                                    |
+| `nicechatbot`         | project slug        | database names, Docker Compose project, Python package, AWS resource prefix, `AWS_PROFILE` |
+| `Nice Chatbot`         | display name        | API title, SES sender name, page title and app header                                    |
 | `example.com`  | your sending domain | the SES identity mail leaves from (`noreply@example.com`); must be verified in SES       |
 | `123456789012` | your AWS account id | the OpenTofu state bucket name in `infra/environments/develop/versions.tf`               |
 
 Replace them from the repo root in one pass (`perl` so the command is the same on macOS and Linux):
 
 ```bash
-git grep -l -E 'acme|Acme' | xargs perl -pi -e 's/acme/<slug>/g; s/Acme/<Name>/g'
+git grep -l -E 'nicechatbot|Nice Chatbot' | xargs perl -pi -e 's/nicechatbot/<slug>/g; s/Nice Chatbot/<Name>/g'
 git grep -l 'example\.com' -- backend/app backend/README.md backend/.env.example infra \
   | xargs perl -pi -e 's/example\.com/<your-domain>/g'
 ```

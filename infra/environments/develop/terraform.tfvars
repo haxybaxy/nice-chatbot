@@ -1,4 +1,4 @@
 environment  = "develop"
-project_name = "acme"
+project_name = "nicechatbot"
 aws_region   = "us-west-1"
 ses_identity = "example.com"

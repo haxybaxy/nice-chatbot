@@ -1,20 +1,20 @@
-# Acme Infrastructure
+# Nice Chatbot Infrastructure
 
-OpenTofu for Acme's AWS resources. Today that is one thing: the **Cognito user pool** the backend
+OpenTofu for Nice Chatbot's AWS resources. Today that is one thing: the **Cognito user pool** the backend
 authenticates against, one pool per environment. Only `develop` exists so far, in **us-west-1**.
 Conventions for contributors are in `CLAUDE.md`; this file is the quick start.
 
 ## Prerequisites
 
 - [OpenTofu](https://opentofu.org) ≥ 1.12 (`brew install opentofu`), `just`, AWS CLI v2.
-- AWS credentials for the Acme account in your environment: the `default` profile, or export
+- AWS credentials for the Nice Chatbot account in your environment: the `default` profile, or export
   `AWS_PROFILE`. With an `aws login` session profile, `just login <profile>` re-authenticates it
   when it expires.
 
 ## Quick start
 
 ```bash
-just bootstrap      # once per account: S3 state bucket acme-tfstate-<account id> in us-west-1; paste the
+just bootstrap      # once per account: S3 state bucket nicechatbot-tfstate-<account id> in us-west-1; paste the
                     # printed bucket name into environments/develop/versions.tf (it ships with a placeholder)
 just init           # providers + S3 backend for environments/develop
 just plan           # first run: user pool, app client, backend IAM policy
@@ -47,16 +47,16 @@ lists them all.
 Shaped by `backend/app/core/cognito.py`, which proxies every auth call through the cognito-idp
 admin API:
 
-- **User pool** `acme-<env>-users`: email is the username; only `AdminCreateUser` can create
+- **User pool** `nicechatbot-<env>-users`: email is the username; only `AdminCreateUser` can create
   users (no self-service sign-up, so the public client id alone cannot bypass the backend); MFA
   off; no device tracking, Lambda triggers or add-ons (the backend rejects every auth challenge);
   passwords ≥ 8 characters with a lowercase, an uppercase and a digit; standard `email` and `name`
   attributes declared up front (changing a schema entry later replaces the pool); `ESSENTIALS`
   tier; `deletion_protection` INACTIVE on develop.
-- **App client** `acme-<env>-backend`: public (no secret), `ALLOW_ADMIN_USER_PASSWORD_AUTH` +
+- **App client** `nicechatbot-<env>-backend`: public (no secret), `ALLOW_ADMIN_USER_PASSWORD_AUTH` +
   `ALLOW_REFRESH_TOKEN_AUTH` only, access/id tokens 1 h, refresh tokens 30 days, user-existence
   errors hidden.
-- **IAM managed policy** `acme-<env>-cognito-backend`: `AdminCreateUser`, `AdminSetUserPassword`,
+- **IAM managed policy** `nicechatbot-<env>-cognito-backend`: `AdminCreateUser`, `AdminSetUserPassword`,
   `AdminDeleteUser`, `AdminInitiateAuth`, `AdminUserGlobalSignOut` on that pool only, plus
   `ses:SendEmail` on the verified SES identity named by `ses_identity` (password-reset mail). Attached to nothing yet: attach it to
   the role that runs the backend once it is deployed. Locally the backend uses your own profile.
@@ -66,7 +66,7 @@ Outputs: `cognito_user_pool_id`, `cognito_app_client_id`, `cognito_issuer_url`, 
 
 ## State
 
-S3 backend, bucket `acme-tfstate-<account id>` (us-west-1, versioned, SSE-S3, public access
+S3 backend, bucket `nicechatbot-tfstate-<account id>` (us-west-1, versioned, SSE-S3, public access
 blocked), one key per environment (`develop/terraform.tfstate`), locking via the S3-native lockfile
 (`use_lockfile = true`, no DynamoDB). `bootstrap.sh` creates the bucket and prints the backend
 block; paste the bucket name into `environments/<env>/versions.tf`, which ships with the placeholder

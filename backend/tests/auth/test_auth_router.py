@@ -221,7 +221,7 @@ class TestForgotPassword:
         assert response.status_code == 204, response.text
         (sent,) = mail.sent
         assert sent.to == EMAIL
-        assert sent.subject == "Reset your Acme password"
+        assert sent.subject == "Reset your Nice Chatbot password"
         assert RESET_URL_PREFIX in sent.text
         assert RESET_URL_PREFIX in sent.html
         raw_token = _mailed_token(sent)

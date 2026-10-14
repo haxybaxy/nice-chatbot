@@ -3,14 +3,14 @@
 # that every environments/<env>/versions.tf backend block points at. Idempotent — re-running it is
 # safe. Locking uses the S3 backend's native lockfile (use_lockfile = true); no DynamoDB table.
 #
-#   just bootstrap            (or: AWS_PROFILE=acme ./bootstrap.sh)
+#   just bootstrap            (or: AWS_PROFILE=nicechatbot ./bootstrap.sh)
 set -euo pipefail
 
-PROJECT_NAME="acme"
+PROJECT_NAME="nicechatbot"
 AWS_REGION="us-west-1"
 
 if ! ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2> /dev/null); then
-    echo "error: AWS CLI is not authenticated (try: aws login --profile ${AWS_PROFILE:-acme})" >&2
+    echo "error: AWS CLI is not authenticated (try: aws login --profile ${AWS_PROFILE:-nicechatbot})" >&2
     exit 1
 fi
 

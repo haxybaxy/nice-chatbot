@@ -1,4 +1,4 @@
-# Acme Frontend
+# Nice Chatbot Frontend
 
 React 19 · Vite 8 · TypeScript 5 · TanStack Query 5 · axios · Tailwind CSS 4 · shadcn/ui (Radix).
 Conventions for contributors (human or agent) are in `CLAUDE.md`; this file is the quick start.

@@ -14,7 +14,7 @@ describe("apiClient path parameters", () => {
         // Checked against `OrganizationOut` by the resolver's type and by the runtime validator.
         return HttpResponse.json({
           id: "org-1",
-          name: "Acme",
+          name: "Nice Chatbot",
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
         });
@@ -26,6 +26,6 @@ describe("apiClient path parameters", () => {
     });
 
     expect(pathname).toBe("/api/organizations/org%201%2Fx");
-    expect(organization.name).toBe("Acme");
+    expect(organization.name).toBe("Nice Chatbot");
   });
 });

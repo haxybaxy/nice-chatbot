@@ -1,4 +1,4 @@
-# Acme Backend
+# Nice Chatbot Backend
 
 FastAPI · async SQLAlchemy 2 · Alembic · AWS Cognito · structlog. Python 3.13, managed with uv.
 Conventions for contributors (human or agent) are in `CLAUDE.md`; this file is the quick start.
@@ -7,7 +7,7 @@ Conventions for contributors (human or agent) are in `CLAUDE.md`; this file is t
 
 ```bash
 cp .env.example .env      # local database values work as-is; COGNITO_* only matter for real sign-in
-just db-up                # Postgres 18 in Docker, creates the `acme` and `acme_test` databases
+just db-up                # Postgres 18 in Docker, creates the `nicechatbot` and `nicechatbot_test` databases
 uv sync                   # runtime + dev dependencies into .venv
 just migrate              # alembic upgrade head
 just dev                  # http://localhost:8000 — Swagger UI at /docs (local/develop tiers only)
@@ -16,7 +16,7 @@ just dev                  # http://localhost:8000 — Swagger UI at /docs (local
 ```bash
 just check                # ruff · basedpyright (strict, no `Any`) · vulture · deptry · sentrux · uv lock --check · guards
 just guards               # convention guards only (tests/guards): architecture, routes, OpenAPI, schemas, settings, DB — no Docker
-just test                 # pytest against acme_test; no network, Cognito and SES replaced by in-memory fakes
+just test                 # pytest against nicechatbot_test; no network, Cognito and SES replaced by in-memory fakes
 just cov                  # same, with a coverage report
 just                      # every recipe
 ```
@@ -94,7 +94,7 @@ where the reset links point (default `http://localhost:3000`).
 
 ### Mail prerequisites
 
-Password-reset mail goes out through SES v2 from `Acme <noreply@example.com>`. The sender and the
+Password-reset mail goes out through SES v2 from `Nice Chatbot <noreply@example.com>`. The sender and the
 SES region (`us-west-1`, where the sending identity must be verified) are fixed in code —
 `MailSettings` in `app/core/config.py` — on purpose: there are no mail variables in `.env`. While
 the AWS account is still in the SES sandbox, SES accepts only verified recipients (an address at
@@ -126,9 +126,9 @@ can return.
 ## Container
 
 ```bash
-docker build -t acme-backend .
+docker build -t nicechatbot-backend .
 docker run --rm -p 8000:8000 --env-file .env \
-  -e DATABASE_URL=postgresql+psycopg://postgres:postgres@host.docker.internal:5432/acme acme-backend
+  -e DATABASE_URL=postgresql+psycopg://postgres:postgres@host.docker.internal:5432/nicechatbot nicechatbot-backend
 ```
 
 ## Known gaps

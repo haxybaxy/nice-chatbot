@@ -8,7 +8,7 @@ default:
     @just --list
 
 # Re-authenticate an `aws login` session profile (static keys in `default` need nothing)
-login profile="acme":
+login profile="nicechatbot":
     aws login --profile {{ profile }}
 
 # One-time: create the S3 state bucket (idempotent)

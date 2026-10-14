@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Monorepo. Each subproject is self-contained (own tooling, dependencies, lockfile); there is no
 root package manager or workspace — `cd` into a subproject before running anything.
 
-This is a boilerplate: `acme` / `Acme` / `example.com` / the AWS account id `123456789012` are
+This is a boilerplate: `nicechatbot` / `Nice Chatbot` / `example.com` / the AWS account id `123456789012` are
 placeholders for the project slug, display name, SES sending domain and account. `README.md` →
 "Make it yours" lists where each one lives and how to replace them in one pass.
 
@@ -104,5 +104,5 @@ just ui-add dialog select                                       # add shadcn com
   Cognito and revokes the user's sessions.
 - basedpyright runs strict with written `Any` banned; the wire format is camelCase generated from
   snake_case schema fields; datetimes on the boundary are `UtcDatetime`.
-- Tests hit the compose Postgres (`acme_test`) inside rolled-back transactions with in-memory
+- Tests hit the compose Postgres (`nicechatbot_test`) inside rolled-back transactions with in-memory
   Cognito and mail fakes — never the network.

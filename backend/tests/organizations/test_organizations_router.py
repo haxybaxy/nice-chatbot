@@ -29,7 +29,7 @@ async def owner(db_session: AsyncSession) -> UserModel:
 
 @pytest.fixture
 async def organization(db_session: AsyncSession, owner: UserModel) -> OrganizationModel:
-    return await seed_organization(db_session, name="Acme", owner=owner)
+    return await seed_organization(db_session, name="Nice Chatbot", owner=owner)
 
 
 class TestCreateOrganization:
@@ -38,15 +38,15 @@ class TestCreateOrganization:
     ) -> None:
         authenticate_as(owner)
 
-        response = await client.post("/api/organizations", json={"name": "Acme"})
+        response = await client.post("/api/organizations", json={"name": "Nice Chatbot"})
 
         assert response.status_code == 201, response.text
         body = response.json()
-        assert body["name"] == "Acme"
+        assert body["name"] == "Nice Chatbot"
         assert await _members(db_session, UUID(body["id"])) == {owner.id: "owner"}
 
     async def test_requires_auth(self, client: AsyncClient) -> None:
-        assert (await client.post("/api/organizations", json={"name": "Acme"})).status_code == 401
+        assert (await client.post("/api/organizations", json={"name": "Nice Chatbot"})).status_code == 401
 
 
 class TestGetOrganization:

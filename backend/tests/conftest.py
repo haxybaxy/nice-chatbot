@@ -32,7 +32,7 @@ class _TestEnv(BaseSettings):
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
 
-    test_database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/acme_test"
+    test_database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/nicechatbot_test"
     database_url: str | None = None
 
 
@@ -40,7 +40,7 @@ _env = _TestEnv()
 if _env.database_url is not None and _env.database_url == _env.test_database_url:
     pytest.exit(
         "TEST_DATABASE_URL equals DATABASE_URL — the suite drops and rebuilds that database's schema. "
-        "Point TEST_DATABASE_URL at a separate database (docker-init creates `acme_test`).",
+        "Point TEST_DATABASE_URL at a separate database (docker-init creates `nicechatbot_test`).",
         returncode=1,
     )
 
@@ -49,7 +49,7 @@ os.environ["DATABASE_URL"] = _env.test_database_url
 for _key, _value in {
     "ENVIRONMENT": "test",
     # Pinned so the OpenAPI snapshot (tests/guards) does not depend on a developer's .env.
-    "PROJECT_NAME": "Acme API",
+    "PROJECT_NAME": "Nice Chatbot API",
     "COGNITO_USER_POOL_ID": "eu-west-1_TESTPOOL",
     "COGNITO_CLIENT_ID": "test-client-id",
     "AWS_REGION": "eu-west-1",

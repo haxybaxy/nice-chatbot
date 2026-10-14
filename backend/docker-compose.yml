@@ -1,9 +1,9 @@
-name: acme
+name: nicechatbot
 
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: acme_postgres
+    container_name: nicechatbot_postgres
     ports:
       - "5432:5432"
     env_file:
@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./docker-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d acme"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nicechatbot"]
       interval: 5s
       timeout: 3s
       retries: 10

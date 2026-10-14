@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = settings_config()
 
     environment: Environment = "local"
-    project_name: str = "Acme API"
+    project_name: str = "Nice Chatbot API"
     version: str = "0.1.0"
     # Where the SPA is served; links in outgoing mail (password reset) point at it.
     frontend_url: str = "http://localhost:3000"
@@ -127,7 +127,7 @@ class MailSettings:
     """
 
     sender_address: str = "noreply@example.com"
-    sender_name: str = "Acme"
+    sender_name: str = "Nice Chatbot"
     region: str = "us-west-1"
 
 

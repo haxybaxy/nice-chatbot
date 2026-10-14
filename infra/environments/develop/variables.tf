@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "project_name" {
   description = "Project name used as the resource-name prefix"
   type        = string
-  default     = "acme"
+  default     = "nicechatbot"
 }
 
 variable "environment" {
