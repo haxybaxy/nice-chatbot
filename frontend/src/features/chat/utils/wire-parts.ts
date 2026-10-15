@@ -4,9 +4,11 @@
  * Plain object construction, no casts: the four structural parts map field by field; a
  * `tool-*` part becomes the typed tool part when its name is known and its payload passes the
  * guard (./payload-guards.ts), else a `dynamic-tool` part the generic shell can still render; a
- * `data-*` part becomes the typed data part or is dropped (nothing would render it). The
- * `start` chunk of a replayed run carries the persisted assistant message id, which is why a
- * resumed stream replaces the message `toChatMessage` built rather than adding a second one.
+ * `data-*` part becomes the typed data part or is dropped (nothing would render it). A tool part
+ * keeps its `providerExecuted` flag (a search or fetch the model's provider ran inside the model
+ * call, which the views label). The `start` chunk of a replayed run carries the persisted
+ * assistant message id, which is why a resumed stream replaces the message `toChatMessage` built
+ * rather than adding a second one.
  */
 import type { DynamicToolUIPart } from "ai";
 
@@ -120,20 +122,27 @@ function toolInvocation<I, O>(
   };
 }
 
+/** The wire's `providerExecuted?: boolean | null` as the SDK's optional flag (absent when unset). */
+function providerExecuted(part: WireToolPart): { providerExecuted?: boolean } {
+  return typeof part.providerExecuted === "boolean"
+    ? { providerExecuted: part.providerExecuted }
+    : {};
+}
+
 function toKnownToolPart(part: WireToolPart): ChatToolPart | undefined {
-  const { toolCallId } = part;
+  const base = { toolCallId: part.toolCallId, ...providerExecuted(part) };
   switch (part.type) {
     case TOOL_PART_TYPES.webSearch: {
       const invocation = toolInvocation(part, isWebSearchInput, isWebSearchOutput);
-      return invocation && { type: TOOL_PART_TYPES.webSearch, toolCallId, ...invocation };
+      return invocation && { type: TOOL_PART_TYPES.webSearch, ...base, ...invocation };
     }
     case TOOL_PART_TYPES.webFetch: {
       const invocation = toolInvocation(part, isWebFetchInput, isWebFetchOutput);
-      return invocation && { type: TOOL_PART_TYPES.webFetch, toolCallId, ...invocation };
+      return invocation && { type: TOOL_PART_TYPES.webFetch, ...base, ...invocation };
     }
     case TOOL_PART_TYPES.code: {
       const invocation = toolInvocation(part, isCodeInput, isCodeOutput);
-      return invocation && { type: TOOL_PART_TYPES.code, toolCallId, ...invocation };
+      return invocation && { type: TOOL_PART_TYPES.code, ...base, ...invocation };
     }
     default:
       return undefined;
@@ -146,6 +155,7 @@ function toDynamicToolPart(part: WireToolPart): DynamicToolUIPart {
     type: "dynamic-tool",
     toolName: part.type.replace(/^tool-/, ""),
     toolCallId: part.toolCallId,
+    ...providerExecuted(part),
   } as const;
   switch (part.state) {
     case "input-available":

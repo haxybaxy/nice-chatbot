@@ -10,7 +10,7 @@ import type { ChatModel } from "../types";
 
 interface ModelSelectProps {
   models: readonly ChatModel[];
-  /** The resolved model id (see `resolveModelId`), or `null` while the catalog is loading. */
+  /** The resolved model id (see `resolveModel`), or `null` while the catalog is loading. */
   value: string | null;
   onChange: (modelId: string) => void;
 }

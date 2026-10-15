@@ -940,6 +940,8 @@ export interface components {
          * @description One entry of the model picker, built from the catalog's ``ModelSpec`` by attribute.
          */
         ModelOut: {
+            /** Code */
+            code: boolean;
             /** Displayname */
             displayName: string;
             /** Id */
@@ -960,6 +962,8 @@ export interface components {
             /** Supportsvision */
             supportsVision: boolean;
             tier: components["schemas"]["Tier"];
+            /** Websearch */
+            webSearch: boolean;
         };
         /** OrganizationMemberOut */
         OrganizationMemberOut: {
@@ -1287,6 +1291,8 @@ export interface components {
             input?: unknown | null;
             /** Output */
             output?: unknown | null;
+            /** Providerexecuted */
+            providerExecuted?: boolean | null;
             /**
              * State
              * @enum {string}

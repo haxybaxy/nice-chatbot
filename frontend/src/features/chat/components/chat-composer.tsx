@@ -16,8 +16,12 @@ import { AttachFilesButton } from "./attach-files-button";
 import { ComposerAttachments } from "./composer-attachments";
 import { ComposerModeButtons } from "./composer-mode-buttons";
 import { ModelSelect } from "./model-select";
-import { useComposerAttachments, useComposerFileEvents } from "../hooks/use-composer-attachments";
-import { type ComposerSettings, resolveModelId } from "../hooks/use-composer-settings";
+import {
+  type PendingAttachment,
+  useComposerAttachments,
+  useComposerFileEvents,
+} from "../hooks/use-composer-attachments";
+import { type ComposerSettings, resolveModel } from "../hooks/use-composer-settings";
 import { usePendingUploads } from "../hooks/use-pending-uploads";
 import type { ChatModel, ComposerSubmission } from "../types";
 import { ATTACHMENT_MAX_FILES, isImageMediaType } from "../utils/attachments";
@@ -40,6 +44,13 @@ interface ChatComposerProps {
 }
 
 const reportRejectedFile = (message: string) => toast.error(message);
+
+/** An image is attached but the model cannot see: the attachment strip says so. */
+function needsVisionHint(model: ChatModel | undefined, files: readonly PendingAttachment[]) {
+  return (
+    model?.supportsVision === false && files.some((entry) => isImageMediaType(entry.file.type))
+  );
+}
 
 /**
  * The prompt box: textarea + attachments (paperclip, drop, paste), model select, Chat / Deep
@@ -71,10 +82,8 @@ export function ChatComposer({
   const isGenerating = status === "submitted" || status === "streaming";
   const hasContent = text.trim().length > 0 || attachments.files.length > 0;
   const canSubmit = status === "ready" && !isUploading && hasContent;
-  const modelId = resolveModelId(settings, models);
-  const showVisionHint =
-    models.find((entry) => entry.id === modelId)?.supportsVision === false &&
-    attachments.files.some((entry) => isImageMediaType(entry.file.type));
+  const model = resolveModel(settings, models);
+  const showVisionHint = needsVisionHint(model, attachments.files);
 
   const submit = async () => {
     if (!canSubmit) {
@@ -120,10 +129,14 @@ export function ChatComposer({
           />
           <ModelSelect
             models={models}
-            value={modelId}
-            onChange={(model) => onSettingsChange({ model })}
+            value={model?.id ?? null}
+            onChange={(id) => onSettingsChange({ model: id })}
           />
-          <ComposerModeButtons settings={settings} onSettingsChange={onSettingsChange} />
+          <ComposerModeButtons
+            settings={settings}
+            onSettingsChange={onSettingsChange}
+            model={model}
+          />
         </PromptInputTools>
         <PromptInputSubmit
           status={status}

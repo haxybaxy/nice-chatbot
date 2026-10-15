@@ -38,7 +38,7 @@ const THREAD_ROUTE = `/app/teams/team-1/chat/${CONVERSATION_ID}`;
 const RUN_OPTIONS = {
   model: DEFAULT_MODEL_ID,
   mode: "chat",
-  tools: { webSearch: false, code: false },
+  tools: { webSearch: true, code: false },
 };
 
 const png = () => new File([ATTACHMENT_BYTES], "photo.png", { type: "image/png" });

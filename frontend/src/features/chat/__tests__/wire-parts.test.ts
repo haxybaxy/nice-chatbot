@@ -120,6 +120,99 @@ describe("toChatMessage", () => {
     ]);
   });
 
+  it("types a built-in search and fetch — url-only hits, no number, no page text — and keeps the flag", () => {
+    const search = {
+      input: { query: "python 3.14 | t-strings" },
+      output: {
+        query: "python 3.14 | t-strings",
+        results: [
+          { url: "https://a.example/p", title: null, snippet: "" },
+          { url: "https://b.example" },
+        ],
+      },
+    };
+    const fetch = {
+      input: { url: "https://a.example/p", query: "t-strings" },
+      output: {
+        sourceId: null,
+        url: "https://a.example/p",
+        title: null,
+        content: "",
+        chars: 0,
+        truncated: false,
+      },
+    };
+    const message = assistant([
+      {
+        type: "tool-web_search",
+        toolCallId: "ws_1",
+        state: "output-available",
+        providerExecuted: true,
+        ...search,
+      },
+      {
+        type: "tool-web_fetch",
+        toolCallId: "wf_1",
+        state: "output-available",
+        providerExecuted: true,
+        ...fetch,
+      },
+      {
+        type: "tool-run_code",
+        toolCallId: "c-1",
+        state: "input-available",
+        providerExecuted: null,
+        input: { language: "bash", code: "ls" },
+      },
+    ]);
+
+    expect(message.parts).toEqual([
+      {
+        type: TOOL_PART_TYPES.webSearch,
+        toolCallId: "ws_1",
+        providerExecuted: true,
+        state: "output-available",
+        ...search,
+      },
+      {
+        type: TOOL_PART_TYPES.webFetch,
+        toolCallId: "wf_1",
+        providerExecuted: true,
+        state: "output-available",
+        ...fetch,
+      },
+      {
+        type: TOOL_PART_TYPES.code,
+        toolCallId: "c-1",
+        state: "input-available",
+        input: { language: "bash", code: "ls" },
+      },
+    ]);
+    // `null` on the wire is "unset": the SDK's flag is simply absent.
+    expect(message.parts[2]).not.toHaveProperty("providerExecuted");
+  });
+
+  it("still refuses a search hit without a url or a fetch without its page", () => {
+    const message = assistant([
+      {
+        type: "tool-web_search",
+        toolCallId: "ws_1",
+        state: "output-available",
+        input: { query: "q" },
+        output: { query: "q", results: [{ title: "No address" }] },
+      },
+      {
+        type: "tool-web_fetch",
+        toolCallId: "wf_1",
+        state: "output-available",
+        input: { url: "https://a.example" },
+        output: { sourceId: null, url: "https://a.example", content: "", truncated: false },
+      },
+    ]);
+
+    expect(message.parts.map((part) => part.type)).toEqual(["dynamic-tool", "dynamic-tool"]);
+  });
+
   it("degrades an unknown tool, or a known tool with a foreign payload, to a dynamic tool part", () => {
     const message = assistant([
       {

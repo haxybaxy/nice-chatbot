@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import App from "@/App";
 import type { CreateMessageRequest } from "@/features/chat/types";
 import { API_ENDPOINTS } from "@/shared/config/api-endpoints";
-import { DEFAULT_MODEL_ID, makeConversation, makeRun } from "@/test/msw/fixtures/chat";
+import { DEFAULT_MODEL_ID, makeConversation, makeModel, makeRun } from "@/test/msw/fixtures/chat";
 import { refusalRun, textRun, titleChunk } from "@/test/msw/fixtures/run-chunks";
 import { CONVERSATION_ID, restingConversationDetail } from "@/test/msw/handlers/chat";
 import { server } from "@/test/msw/server";
@@ -61,7 +61,7 @@ describe("sending a message", () => {
         parts: [{ type: "text", text: "What is 17*23?" }],
         model: DEFAULT_MODEL_ID,
         mode: "chat",
-        tools: { webSearch: false, code: false },
+        tools: { webSearch: true, code: false },
       },
     ]);
     // The user's message is in the thread and the answer is one assistant message.
@@ -73,6 +73,36 @@ describe("sending a message", () => {
     // Back to ready: the composer was cleared, so Submit is disabled again.
     await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled());
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
+  });
+
+  it("disables Search for a model that cannot search and never sends it as on", async () => {
+    const user = userEvent.setup();
+    const bodies: CreateMessageRequest[] = [];
+    server.use(
+      mockApi.get(API_ENDPOINTS.CHAT.MODELS, () =>
+        HttpResponse.json([makeModel({ isDefault: true, webSearch: false })])
+      ),
+      mockApi.post(API_ENDPOINTS.CHAT.MESSAGES, async ({ request, params }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(makeRun({ id: "run-1", conversationId: params.conversation_id }), {
+          status: 201,
+        });
+      })
+    );
+    renderWithProviders(<App />, { route: THREAD_ROUTE });
+
+    // Until the catalog has loaded the remembered toggle (on) stands; then the model decides.
+    const search = await screen.findByRole("button", { name: "Search" });
+    await waitFor(() => expect(search).toBeDisabled());
+    expect(search).toHaveAttribute("aria-pressed", "false");
+    expect(search).toHaveAttribute("title", "Web search is not available for this model");
+    expect(screen.getByRole("button", { name: "Code" })).toBeEnabled();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hi");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]?.tools).toEqual({ webSearch: false, code: false });
   });
 
   it("renders a refusal as a notice, not an error", async () => {

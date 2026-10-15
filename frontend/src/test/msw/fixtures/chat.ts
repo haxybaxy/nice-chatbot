@@ -24,6 +24,8 @@ export function makeModel(overrides: Partial<ChatModel> = {}): ChatModel {
     supportsTools: true,
     supportsVision: true,
     supportsReasoning: true,
+    webSearch: true,
+    code: true,
     isDefault: false,
     ...overrides,
   };

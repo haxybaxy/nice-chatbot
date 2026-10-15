@@ -78,7 +78,7 @@ describe("starting a conversation", () => {
           parts: [{ type: "text", text: "Hello?" }],
           model: DEFAULT_MODEL_ID,
           mode: "chat",
-          tools: { webSearch: false, code: false },
+          tools: { webSearch: true, code: false },
         },
       },
     ]);

@@ -29,6 +29,10 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
   const chat = useConversationChat({ teamId, detail, getRunOptions: () => runOptions });
   const isBusy = chat.status === "submitted" || chat.status === "streaming";
   const lastMessage = chat.messages.at(-1);
+  // "Thinking…" covers the wait before any chunk. The `start` chunk creates the assistant
+  // message without flipping the status to `streaming`, and from then on the message's own
+  // activity line (`AssistantActivity`) says what is happening — one indicator at a time.
+  const awaitingFirstChunk = chat.status === "submitted" && lastMessage?.role !== "assistant";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -42,7 +46,7 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
               isStreaming={isBusy && message === lastMessage && message.role === "assistant"}
             />
           ))}
-          {chat.status === "submitted" && (
+          {awaitingFirstChunk && (
             <Shimmer duration={1} className="text-sm">
               Thinking…
             </Shimmer>
