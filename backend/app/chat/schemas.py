@@ -163,6 +163,9 @@ class ModelOut(BaseSchemaOut):
     supports_tools: bool
     supports_reasoning: bool
     supports_vision: bool
+    # What a run on this model can do on this server (the composer disables the rest).
+    web_search: bool
+    code: bool
     is_default: bool
 
 

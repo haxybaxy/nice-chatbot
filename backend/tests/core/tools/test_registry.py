@@ -27,12 +27,14 @@ from app.core.tools.base import (
 )
 from app.core.tools.registry import (
     BUDGET_EXHAUSTED,
+    NATIVE_WEB_SEARCH,
     RUN_CANCELLED,
+    RunTools,
     ToolRegistry,
     default_tool_registry,
     tool_error_text,
 )
-from tests.fakes_llm import LOCAL, OPUS, FakeSandboxClient, FakeSearchClient, make_run_context, scripted_turn
+from tests.fakes_llm import GPT, LOCAL, OPUS, FakeSandboxClient, FakeSearchClient, make_run_context, scripted_turn
 from tests.graph_harness import chat_graph, collect, invoke_state, prompt, scripted_model
 
 
@@ -50,34 +52,67 @@ async def _big(call: ToolCallContext, args: BigIn) -> ToolResult:
 BIG: ToolSpec = Tool(name="big", description="Returns a lot.", args_schema=BigIn, requires=None, run=_big)
 
 
+ALL_TOOLS = {"web_search", "web_fetch", "run_code"}
+
+
 class TestForRun:
-    def test_filters_by_capability_and_sorts_by_name(self) -> None:
+    def test_filters_by_capability_reports_the_rest_and_sorts_by_name(self) -> None:
         registry = default_tool_registry()
         assert registry.names() == ["run_code", "web_fetch", "web_search"]
-        nothing = registry.for_run(make_run_context(), names={"web_search", "web_fetch", "run_code"}, spec=OPUS)
-        assert nothing == []
-        searching = registry.for_run(
-            make_run_context(search=FakeSearchClient()), names={"web_search", "web_fetch", "run_code"}, spec=OPUS
-        )
-        assert [tool.name for tool in searching] == ["web_fetch", "web_search"]
+        nothing = registry.for_run(make_run_context(), names=ALL_TOOLS, spec=OPUS)
+        assert nothing == RunTools(unavailable=("run_code", "web_fetch", "web_search"))
+        assert not nothing
+        searching = registry.for_run(make_run_context(search=FakeSearchClient()), names=ALL_TOOLS, spec=OPUS)
+        assert [tool.name for tool in searching.client] == ["web_fetch", "web_search"]
+        assert (searching.names, searching.unavailable, searching.provider) == (("web_fetch", "web_search"), ("run_code",), ())
         everything = registry.for_run(
-            make_run_context(search=FakeSearchClient(), sandbox=FakeSandboxClient()),
-            names={"web_search", "run_code", "web_fetch"},
-            spec=OPUS,
+            make_run_context(search=FakeSearchClient(), sandbox=FakeSandboxClient()), names=ALL_TOOLS, spec=OPUS
         )
-        assert [tool.name for tool in everything] == ["run_code", "web_fetch", "web_search"]
+        assert [tool.name for tool in everything.client] == ["run_code", "web_fetch", "web_search"]
+        assert everything.names == ("run_code", "web_fetch", "web_search")
+        assert everything.unavailable == ()
+        assert everything.bound == list(everything.client)
+
+    def test_native_search_binds_the_provider_tool_and_covers_web_fetch(self) -> None:
+        registry = default_tool_registry()
+        # No Tavily client at all: the model's built-in search is enough.
+        native = registry.for_run(make_run_context(), names=ALL_TOOLS, spec=GPT)
+        assert native.provider == (NATIVE_WEB_SEARCH,)
+        assert native.client == ()
+        assert (native.names, native.unavailable, native.native_web_search) == (("web_search",), ("run_code",), True)
+        assert native.bound == [NATIVE_WEB_SEARCH]
+        assert native
+        # With Tavily configured too, the built-in search still wins and the sandbox tool joins it.
+        both = registry.for_run(
+            make_run_context(search=FakeSearchClient(), sandbox=FakeSandboxClient()), names=ALL_TOOLS, spec=GPT
+        )
+        assert [tool.name for tool in both.client] == ["run_code"]
+        assert (both.names, both.provider) == (("run_code", "web_search"), (NATIVE_WEB_SEARCH,))
+        # Only web_fetch requested: nothing native about that, so Tavily or nothing.
+        fetch_only = registry.for_run(make_run_context(), names={"web_fetch"}, spec=GPT)
+        assert fetch_only == RunTools(unavailable=("web_fetch",))
 
     def test_unknown_names_are_ignored_and_toolless_models_get_nothing(self) -> None:
         ctx = make_run_context(search=FakeSearchClient())
-        assert [
-            tool.name for tool in default_tool_registry().for_run(ctx, names={"web_search", "bogus"}, spec=OPUS)
-        ] == ["web_search"]
+        assert default_tool_registry().for_run(ctx, names={"web_search", "bogus"}, spec=OPUS).names == ("web_search",)
         toolless = replace(LOCAL, supports_tools=False)
-        assert default_tool_registry().for_run(ctx, names={"web_search"}, spec=toolless) == []
+        assert default_tool_registry().for_run(ctx, names={"web_search", "bogus"}, spec=toolless) == RunTools(
+            unavailable=("web_search",)
+        )
+
+    def test_configured_names_follow_the_server_capabilities(self) -> None:
+        registry = default_tool_registry()
+        assert registry.configured(search=False, sandbox=False, native_web_search=False) == []
+        assert registry.configured(search=False, sandbox=False, native_web_search=True) == ["web_search"]
+        assert registry.configured(search=True, sandbox=True, native_web_search=False) == [
+            "run_code",
+            "web_fetch",
+            "web_search",
+        ]
 
     def test_structured_tool_carries_sanitized_schema_and_eager_streaming(self) -> None:
         ctx = make_run_context(search=FakeSearchClient())
-        (tool,) = default_tool_registry().for_run(ctx, names={"web_search"}, spec=OPUS)
+        (tool,) = default_tool_registry().for_run(ctx, names={"web_search"}, spec=OPUS).client
         assert tool.name == "web_search"
         assert tool.response_format == "content_and_artifact"
         assert tool.extras == {"eager_input_streaming": True}

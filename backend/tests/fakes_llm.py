@@ -16,7 +16,7 @@ import json
 import re
 from collections.abc import AsyncIterator, Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, cast
 from uuid import UUID, uuid4
 
@@ -57,6 +57,16 @@ CATALOG = ModelCatalog(
     openai_supports_vision=False,
 )
 OPUS = CATALOG.get("anthropic:claude-opus-5-5")
+# OpenAI itself: tool-capable, reasoning, searching through the provider's built-in tool.
+GPT = replace(
+    CATALOG.get("openai:llama3.3"),
+    id="openai:gpt-5.5",
+    model_id="gpt-5.5",
+    display_name="GPT-5.5",
+    supports_reasoning=True,
+    native_web_search=True,
+    web_search=True,
+)
 SONNET = CATALOG.get("anthropic:claude-sonnet-5-5")
 HAIKU = CATALOG.get("anthropic:claude-haiku-5-5")
 LOCAL = CATALOG.get("openai:llama3.3")
@@ -183,7 +193,10 @@ class ScriptedChatModel(BaseChatModel):
         **kwargs: object,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         del tool_choice
-        self.bound_tools.append([str(getattr(tool, "name", tool)) for tool in tools])
+        # Provider tools are dicts keyed by `type`; LangChain tools carry a `name`.
+        self.bound_tools.append(
+            [str(tool.get("type")) if isinstance(tool, Mapping) else str(getattr(tool, "name", tool)) for tool in tools]
+        )
         self.bind_kwargs.append(dict(kwargs))
         return self
 

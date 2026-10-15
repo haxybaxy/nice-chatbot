@@ -6,13 +6,12 @@ import asyncio
 from typing import Literal
 
 import pytest
-from langchain_core.tools import BaseTool
 from pydantic import Field
 
 from app.core.exceptions import AppError
 from app.core.schemas import BaseSchema
 from app.core.tools.base import RunContext, Tool, ToolCallContext, ToolResult, ToolSpec
-from app.core.tools.registry import ToolRegistry
+from app.core.tools.registry import RunTools, ToolRegistry
 from app.core.ui_stream import data_chunk
 from tests.fakes_llm import OPUS, make_run_context
 from tests.graph_harness import chat_graph, collect, prompt, scripted_model
@@ -46,7 +45,7 @@ async def _echo(call: ToolCallContext, args: EchoIn) -> ToolResult:
 ECHO: ToolSpec = Tool(name="echo", description="Repeats text.", args_schema=EchoIn, requires=None, run=_echo)
 
 
-def echo_tools(ctx: RunContext) -> list[BaseTool]:
+def echo_tools(ctx: RunContext) -> RunTools:
     return ToolRegistry([ECHO]).for_run(ctx, names={"echo"}, spec=OPUS)
 
 

@@ -31,7 +31,7 @@ from app.chat.use_cases.claim_run import ClaimRun
 from app.chat.use_cases.reap_stale_runs import ReapStaleRuns
 from app.chat.use_cases.run_assistant_turn import RunAssistantTurn
 from app.core.agent.checkpointer import Checkpointer, default_checkpointer
-from app.core.config import worker_settings
+from app.core.config import llm_settings, worker_settings
 from app.core.llm.chat_models import ChatModelFactory, default_chat_model_factory
 from app.core.logging_config import configure_logging, get_logger
 from app.core.observability import Tracer, default_tracer
@@ -199,7 +199,11 @@ async def main() -> None:
         worker_id=WORKER_ID,
         concurrency=options.concurrency,
         listening=listener.listening,
-        tools=deps.tools.names(),
+        tools=deps.tools.configured(
+            search=deps.search is not None,
+            sandbox=deps.sandbox is not None,
+            native_web_search=llm_settings.openai_native_web_search,
+        ),
     )
     try:
         await Worker(WORKER_ID, deps, stop=stop, options=options).serve()

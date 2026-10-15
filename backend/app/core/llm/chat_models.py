@@ -1,9 +1,11 @@
 """Build the LangChain chat model for a :class:`ModelSpec` — the only place a provider SDK is configured.
 
 Claude goes through ``ChatAnthropic`` (adaptive thinking always on, ``effort`` per run, automatic
-prompt-cache breakpoint on every call, strict tools); OpenAI-compatible servers (vLLM, Ollama,
-unsloth) go through ``ChatOpenAI`` with ``base_url``. Claude is never routed through
-``ChatOpenAI`` — ``parse_model_id`` refuses ``openai:claude-*`` at startup.
+prompt-cache breakpoint on every call, strict tools). OpenAI itself goes through ``ChatOpenAI`` on
+the Responses API (stateless — ``store=False`` with encrypted reasoning replayed — so built-in tools
+such as web search are available); other OpenAI-compatible servers (vLLM, Ollama, unsloth) get
+``ChatOpenAI`` with ``base_url`` on Chat Completions. Claude is never routed through ``ChatOpenAI``
+— ``parse_model_id`` refuses ``openai:claude-*`` at startup.
 
 :class:`BuiltModel` is what the agent graph consumes: the unbound model, the per-call kwargs the
 provider needs, how the system prompt must be shaped, and how to bind tools. ``ChatModelFactory``
@@ -36,8 +38,14 @@ from app.core.llm.catalog import ModelSpec
 from app.core.ui_stream import JsonObject
 
 type SystemFormat = Literal["blocks", "text"]
+# A tool the provider executes itself, bound next to the LangChain tools — e.g. OpenAI's
+# ``{"type": "web_search"}``. Its calls come back inside the model's message, never as tool calls.
+type ProviderTool = JsonObject
 # LangGraph skips token streaming for models tagged "nostream" (titles, planners, checkers).
 NOSTREAM_TAG = "nostream"
+# Responses API fields the stateless replay needs: the encrypted reasoning items, and the pages a
+# built-in search consulted (rendered in the search step).
+OPENAI_RESPONSES_INCLUDE: tuple[str, ...] = ("reasoning.encrypted_content", "web_search_call.action.sources")
 _ADAPTIVE_THINKING: dict[str, object] = {"type": "adaptive", "display": "summarized"}
 _OPENAI_EFFORTS: dict[Effort, str] = {
     "low": "low",
@@ -63,7 +71,7 @@ class BuiltModel:
     strict_tools: bool | None
     parallel_tool_calls: bool | None
 
-    def runnable(self, tools: Sequence[BaseTool] = ()) -> Runnable[LanguageModelInput, AIMessage]:
+    def runnable(self, tools: Sequence[BaseTool | ProviderTool] = ()) -> Runnable[LanguageModelInput, AIMessage]:
         """The model ready to call: ``tools`` bound the way its provider wants, ``invoke_kwargs`` applied."""
         bound: Runnable[LanguageModelInput, AIMessage] = self.model
         if tools:
@@ -88,6 +96,8 @@ class ProviderConfig:
     max_retries: int
     openai_max_tokens_param: Literal["max_completion_tokens", "max_tokens"]
     openai_parallel_tool_calls: bool
+    # api.openai.com: the Responses API (built-in tools, stateless replay). Other servers: Chat Completions.
+    openai_responses_api: bool
 
     @classmethod
     def from_settings(cls) -> ProviderConfig:
@@ -103,6 +113,7 @@ class ProviderConfig:
             max_retries=llm_settings.llm_max_retries,
             openai_max_tokens_param=llm_settings.llm_openai_max_tokens_param,
             openai_parallel_tool_calls=llm_settings.llm_openai_parallel_tool_calls,
+            openai_responses_api=llm_settings.openai_responses_api,
         )
 
 
@@ -189,9 +200,18 @@ def _build_openai(
     # OpenAI itself needs a key; another OpenAI-compatible server is usable as soon as it is named.
     if config.openai_api_key is None and config.openai_base_url == OPENAI_DEFAULT_BASE_URL:
         raise AppError.service_unavailable("LLM provider not configured", provider="openai", model=spec.id)
-    # ChatOpenAI always renders `max_tokens` as `max_completion_tokens`; servers that only know
-    # the legacy name get it through `extra_body` instead.
-    legacy_max_tokens = config.openai_max_tokens_param == "max_tokens"
+    responses = config.openai_responses_api
+    # ChatOpenAI always renders `max_tokens` as `max_completion_tokens` (`max_output_tokens` on the
+    # Responses API); Chat Completions servers that only know the legacy name get it through `extra_body`.
+    legacy_max_tokens = config.openai_max_tokens_param == "max_tokens" and not responses
+    # Reasoning: the Responses API takes an object (and streams a summary the UI shows as reasoning).
+    reasoning: dict[str, object] | None = None
+    reasoning_effort: str | None = None
+    if spec.supports_reasoning:
+        if responses:
+            reasoning = {"effort": _OPENAI_EFFORTS[effort], "summary": "auto"}
+        else:
+            reasoning_effort = _OPENAI_EFFORTS[effort]
     model = ChatOpenAI(
         model=spec.model_id,
         api_key=SecretStr(config.openai_api_key or "not-needed"),
@@ -199,10 +219,14 @@ def _build_openai(
         max_retries=config.max_retries,
         timeout=config.request_timeout_s,
         stream_usage=True,
-        use_responses_api=False,
+        use_responses_api=responses,
+        # Stateless: nothing is kept on OpenAI's side; the history we store is replayed in full.
+        store=False if responses else None,
+        include=list(OPENAI_RESPONSES_INCLUDE) if responses else None,
         max_completion_tokens=None if legacy_max_tokens else max_tokens,
         extra_body={"max_tokens": max_tokens} if legacy_max_tokens else None,
-        reasoning_effort=_OPENAI_EFFORTS[effort] if spec.supports_reasoning else None,
+        reasoning_effort=reasoning_effort,
+        reasoning=reasoning,
         # Servers that reject the parameter never see it; when enabled it is bound per tool set.
         disabled_params=None if config.openai_parallel_tool_calls else {"parallel_tool_calls": None},
         tags=_tags(purpose, silent=silent),
