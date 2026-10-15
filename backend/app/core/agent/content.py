@@ -17,8 +17,19 @@ def _fragment(item: Mapping[str, object]) -> Fragment | None:
         return ("text", text) if isinstance(text, str) and text else None
     if kind in ("reasoning", "thinking"):
         text = item.get("reasoning") if kind == "reasoning" else item.get("thinking")
-        return ("reasoning", text) if isinstance(text, str) and text else None
+        if isinstance(text, str) and text:
+            return ("reasoning", text)
+        return _summary_fragment(item.get("summary"))
     return None
+
+
+def _summary_fragment(summary: object) -> Fragment | None:
+    """OpenAI's Responses API streams reasoning as ``summary: [{"type": "summary_text", "text": …}]``."""
+    if not isinstance(summary, list):
+        return None
+    parts = [cast("Mapping[str, object]", part) for part in cast("list[object]", summary) if isinstance(part, Mapping)]
+    text = "".join(str(part.get("text", "")) for part in parts)
+    return ("reasoning", text) if text else None
 
 
 def fragments(content: object) -> Iterable[Fragment]:

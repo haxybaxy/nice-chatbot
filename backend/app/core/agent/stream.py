@@ -61,7 +61,7 @@ async def map_graph_stream(
     streamed_nodes: Collection[str] = DEFAULT_STREAMED_NODES,
 ) -> AsyncGenerator[MappedEvent]:
     """Turn a v2 LangGraph stream into UI chunks, step completions and one ``RunFinished``."""
-    mapper = Mapper(streamed_nodes)
+    mapper = Mapper(streamed_nodes, sources=ctx.sources)
     cancel_task: asyncio.Task[str] = asyncio.ensure_future(ctx.cancel.wait())
     next_task: asyncio.Task[object] | None = None
     try:

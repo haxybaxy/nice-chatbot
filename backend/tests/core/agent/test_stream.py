@@ -9,10 +9,16 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from app.core.agent.state import AgentLimits
 from app.core.tools.base import RunContext
+from app.core.tools.registry import NATIVE_WEB_SEARCH, RunTools
 from app.core.ui_fold import fold_parts
 from app.core.ui_stream import JsonObject
 from tests.core.agent.conftest import chat_graph, collect, echo_tools, prompt, scripted_model
-from tests.fakes_llm import scripted_turn
+from tests.fakes_llm import scripted_openai_turn, scripted_turn
+
+NATIVE = RunTools(provider=(NATIVE_WEB_SEARCH,), names=("web_search",), native_web_search=True)
+DOCS = "https://docs.python.org/3.14/whatsnew/3.14.html"
+PEP = "https://peps.python.org/pep-0750/"
+TRACKED = f"{DOCS}?utm_source=chatgpt.com"
 
 
 def _tool_part(parts: Sequence[JsonObject], call_id: str) -> JsonObject:
@@ -132,6 +138,119 @@ class TestTextAndTools:
         result = await collect(chat_graph(built, echo_tools(ctx)), ctx, prompt())
         error = next(chunk for chunk in result.chunks if chunk["type"] == "tool-output-error")
         assert "not a valid tool" in str(error["errorText"])
+
+
+class TestNativeSearch:
+    """OpenAI's built-in search: `web_search_call` blocks and `url_citation` annotations become parts."""
+
+    async def test_search_call_and_a_linked_citation_become_tool_and_source_parts(self, ctx: RunContext) -> None:
+        link = f"([What's New]({TRACKED}))"
+        answer = f"Python 3.14 adds template strings {link}."
+        start = answer.index(link)
+        turn = scripted_openai_turn(
+            answer,
+            searches=[("python 3.14 changes", [TRACKED, PEP])],
+            citations=[(TRACKED, "What's New In Python 3.14", start, start + len(link))],
+        )
+        model, built = scripted_model([turn])
+        result = await collect(chat_graph(built, NATIVE), ctx, prompt())
+
+        assert model.bound_tools == [["web_search"]]
+        types = result.types
+        assert types[:4] == ["start-step", "tool-input-start", "tool-input-available", "tool-output-available"]
+        assert types.index("tool-output-available") < types.index("text-start") < types.index("source-url")
+        assert types.index("source-url") < types.index("text-end") < types.index("finish-step")
+        assert types[-1] == "finish"
+        assert result.chunks[-1] == {"type": "finish", "finishReason": "stop"}
+
+        started = result.first("tool-input-start")
+        assert (started["toolName"], started["providerExecuted"]) == ("web_search", True)
+        assert str(started["toolCallId"]).startswith("ws_")
+        assert result.first("tool-input-available")["input"] == {"query": "python 3.14 changes"}
+        output = result.first("tool-output-available")
+        assert output["providerExecuted"] is True
+        assert output["output"] == {
+            "query": "python 3.14 changes",
+            "results": [{"url": DOCS, "title": None, "snippet": ""}, {"url": PEP, "title": None, "snippet": ""}],
+        }
+        # The cited page is numbered once, without its tracking parameter.
+        assert result.of_type("source-url") == [
+            {"type": "source-url", "sourceId": "1", "url": DOCS, "title": "What's New In Python 3.14"}
+        ]
+        assert [source.url for source in ctx.sources.all()] == [DOCS]
+
+        # One model step, no tool round: the search ran inside the call.
+        assert [step.kind for step in result.steps] == ["assistant"]
+        parts = result.finished.parts
+        assert parts == fold_parts(result.ui_chunks)
+        assert [part["type"] for part in parts] == ["step-start", "tool-web_search", "text", "source-url"]
+        assert parts[1]["providerExecuted"] is True
+        # The span is already the model's own link to the source: no marker added.
+        assert parts[2]["text"] == answer
+        step_message = result.steps[0].messages[0]
+        assert any(block.get("type") == "web_search_call" for block in step_message.content if isinstance(block, dict))
+
+    async def test_an_unlinked_citation_gets_a_marker_once_per_source(self, ctx: RunContext) -> None:
+        answer = "A is fast. B is cheap."
+        turn = scripted_openai_turn(
+            answer,
+            citations=[(DOCS, "Docs", 0, 10), (PEP, "PEP", 11, 22), (f"{PEP}#top", "PEP again", 11, 22)],
+        )
+        _, built = scripted_model([turn])
+        result = await collect(chat_graph(built, NATIVE), ctx, prompt())
+
+        text = "".join(str(chunk["delta"]) for chunk in result.chunks if chunk["type"] == "text-delta")
+        # Streamed: the marker follows the span as it was written (the word-level chunk includes the period).
+        assert text == "A is fast. [1] B is cheap. [2]"
+        assert [source["sourceId"] for source in result.of_type("source-url")] == ["1", "2"]
+        assert [source.url for source in ctx.sources.all()] == [DOCS, PEP]
+
+    async def test_a_landed_message_marks_citations_at_their_offsets(self, ctx: RunContext) -> None:
+        answer = "A is fast. B is cheap."
+        turn = scripted_openai_turn(answer, citations=[(DOCS, "Docs", 0, 10), (PEP, "PEP", 11, 22)])
+        model, built = scripted_model([turn])
+        model.tags = ["nostream"]
+        result = await collect(chat_graph(built, NATIVE), ctx, prompt())
+        assert result.finished.parts[-1]["text"] == "A is fast [1]. B is cheap [2]."
+        assert [source["sourceId"] for source in result.of_type("source-url")] == ["1", "2"]
+
+    async def test_opened_pages_and_failed_searches(self, ctx: RunContext) -> None:
+        turn = scripted_openai_turn("Read it.", pages=[DOCS])
+        failing = AIMessage(
+            content=[{"type": "web_search_call", "id": "ws_bad", "status": "failed", "action": {"type": "search"}}],
+            response_metadata={"model_provider": "openai", "status": "completed"},
+        )
+        _, built = scripted_model([turn])
+        result = await collect(chat_graph(built, NATIVE), ctx, prompt())
+        fetch = result.first("tool-input-available")
+        assert (fetch["toolName"], fetch["input"]) == ("web_fetch", {"url": DOCS})
+        assert result.first("tool-output-available")["output"] == {
+            "sourceId": None,
+            "url": DOCS,
+            "title": None,
+            "content": "",
+            "chars": 0,
+            "truncated": False,
+        }
+        assert [part["type"] for part in result.finished.parts] == ["step-start", "tool-web_fetch", "text"]
+
+        ctx_2 = ctx
+        _, built = scripted_model([failing])
+        result = await collect(chat_graph(built, NATIVE), ctx_2, prompt())
+        error = result.first("tool-output-error")
+        assert (error["toolCallId"], error["providerExecuted"]) == ("ws_bad", True)
+        assert result.finished.parts[-1]["state"] == "output-error"
+
+    async def test_reasoning_summaries_stream_and_incomplete_means_length(self, ctx: RunContext) -> None:
+        turn = scripted_openai_turn(
+            "Half an answ", reasoning="Weighing it", status="incomplete", incomplete_reason="max_output_tokens"
+        )
+        _, built = scripted_model([turn])
+        result = await collect(chat_graph(built, NATIVE), ctx, prompt())
+        reasoning = "".join(str(chunk["delta"]) for chunk in result.chunks if chunk["type"] == "reasoning-delta")
+        assert reasoning == "Weighing it"
+        assert result.chunks[-1] == {"type": "finish", "finishReason": "length"}
+        assert [part["type"] for part in result.finished.parts] == ["step-start", "reasoning", "text"]
 
 
 class TestLimits:

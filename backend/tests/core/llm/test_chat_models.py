@@ -182,7 +182,14 @@ class TestOpenAIResponses:
         assert payload["store"] is False
         assert payload["include"] == ["reasoning.encrypted_content", "web_search_call.action.sources"]
         assert payload["parallel_tool_calls"] is True
-        for forbidden in ("max_completion_tokens", "reasoning_effort", "tool_choice", "temperature", "user", "extra_body"):
+        for forbidden in (
+            "max_completion_tokens",
+            "reasoning_effort",
+            "tool_choice",
+            "temperature",
+            "user",
+            "extra_body",
+        ):
             assert forbidden not in payload
         tools = _json_list(payload["tools"])
         # Responses shape: function tools are flat, the provider tool passes through untouched.
@@ -197,14 +204,18 @@ class TestOpenAIResponses:
         assert built.system_format == "text"
 
     def test_legacy_max_tokens_name_is_ignored_on_the_responses_api(self) -> None:
-        built = build_chat_model(GPT, _openai_config(openai_max_tokens_param="max_tokens"), effort="low", purpose="chat")
+        built = build_chat_model(
+            GPT, _openai_config(openai_max_tokens_param="max_tokens"), effort="low", purpose="chat"
+        )
         payload = _payload(built, [HumanMessage("hi")])
         assert payload["max_output_tokens"] == 4096
         assert "extra_body" not in payload
 
     def test_output_schema_becomes_text_format(self) -> None:
         schema: JsonObject = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
-        built = build_chat_model(GPT, _openai_config(), effort="low", purpose="title", output_schema=schema, silent=True)
+        built = build_chat_model(
+            GPT, _openai_config(), effort="low", purpose="title", output_schema=schema, silent=True
+        )
         payload = _payload(built, [HumanMessage("hi")])
         assert "response_format" not in payload
         text_format = _json_dict(_json_dict(payload["text"])["format"])

@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.core.agent.graph import run_config
 from app.core.agent.stream import RunFinished, StepCompleted, UIChunkEvent, map_graph_stream
 from app.core.exceptions import AppError
+from app.core.llm.catalog import ModelSpec
 from app.core.research.graph import (
     RESEARCH_STREAMED_NODES,
     ResearchGraph,
@@ -27,6 +28,7 @@ from app.core.tools.base import RunContext
 from app.core.tools.registry import default_tool_registry
 from app.core.ui_stream import UIChunk
 from tests.fakes_llm import (
+    GPT,
     HAIKU,
     OPUS,
     SONNET,
@@ -34,6 +36,7 @@ from tests.fakes_llm import (
     FakeSearchClient,
     ScriptedChatModel,
     make_run_context,
+    scripted_openai_turn,
     scripted_turn,
 )
 
@@ -100,7 +103,9 @@ class Research:
         return [dict(chunk) for chunk in self.chunks if chunk["type"] == chunk_type]
 
 
-def _graph(models: Models, budget: ResearchBudget, *, with_checker: bool = True) -> ResearchGraph:
+def _graph(
+    models: Models, budget: ResearchBudget, *, with_checker: bool = True, worker_spec: ModelSpec = SONNET
+) -> ResearchGraph:
     factory = FakeChatModelFactory(
         by_purpose={
             "research_plan": models.planner,
@@ -112,7 +117,7 @@ def _graph(models: Models, budget: ResearchBudget, *, with_checker: bool = True)
     return build_research_graph(
         planner=factory.build(OPUS, effort="high", purpose="research_plan", silent=True),
         lead=factory.build(OPUS, effort="medium", purpose="research_synthesis"),
-        worker=factory.build(SONNET, effort="low", purpose="research_task", silent=True),
+        worker=factory.build(worker_spec, effort="low", purpose="research_task", silent=True),
         checker=factory.build(HAIKU, effort="low", purpose="research_citations", silent=True) if with_checker else None,
         tools=default_tool_registry(),
         budget=budget,
@@ -222,6 +227,55 @@ class TestHappyPath:
         assert parts[0] == "data-research-plan"
         assert parts.count("data-research-task") == 2
         assert parts[-1] == "data-research-citations"
+
+    async def test_native_search_subagents_number_their_citations(self) -> None:
+        """Subagents on a model with built-in search: no tool round, the findings still carry [n]."""
+        a_link = f"([A docs]({A_URL}?utm_source=chatgpt.com))"
+        a_text = f"Findings:\n- A is fast {a_link}\nSources:\n- A docs\nConfidence: high\nGaps: none"
+        b_text = "Findings:\n- B is cheap\nSources:\n- B pricing\nConfidence: medium\nGaps: none"
+        worker = ScriptedChatModel(
+            turns=[
+                scripted_openai_turn(
+                    a_text,
+                    searches=[("A speed", [A_URL])],
+                    citations=[
+                        (
+                            f"{A_URL}?utm_source=chatgpt.com",
+                            "A docs",
+                            a_text.index(a_link),
+                            a_text.index(a_link) + len(a_link),
+                        )
+                    ],
+                ),
+                scripted_openai_turn(
+                    b_text,
+                    searches=[("B price", [B_URL, A_URL])],
+                    citations=[
+                        (B_URL, "B pricing", b_text.index("B is cheap"), b_text.index("B is cheap") + len("B is cheap"))
+                    ],
+                ),
+            ]
+        )
+        models = Models(worker=worker, lead=ScriptedChatModel(turns=lead_turns()))
+        ctx = make_run_context()  # no Tavily client at all
+        result = await _run(_graph(models, SERIAL, worker_spec=GPT), ctx)
+
+        assert worker.bound_tools == [["web_search"], ["web_search"]]
+        cards = result.of_type("data-research-task")
+        done = {str(card["id"]): _data(card) for card in cards if _data(card)["status"] == "done"}
+        assert done["a"]["toolCalls"] == 1
+        assert str(done["a"]["summary"]).startswith("Findings:\n- A is fast ([A docs]")
+        assert "- B is cheap [2]" in str(done["b"]["summary"])
+        running = [_data(card) for card in cards if card["id"] == "b" and _data(card)["status"] == "running"]
+        assert running[-1]["lastAction"] == "web_search: B price"
+        assert [(chunk["sourceId"], chunk["url"]) for chunk in result.of_type("source-url")] == [
+            ("1", A_URL),
+            ("2", B_URL),
+        ]
+        synthesis_prompt = str(models.lead.calls[0][-1].content)
+        assert "[1] A docs — https://a.example/" in synthesis_prompt
+        assert "[2] B pricing — https://b.example/" in synthesis_prompt
+        assert result.finished.stop.reason == "end"
 
 
 class TestDegradedPaths:

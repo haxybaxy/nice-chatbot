@@ -1631,6 +1631,17 @@
             ],
             "title": "Output"
           },
+          "providerExecuted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerexecuted"
+          },
           "state": {
             "enum": [
               "input-available",

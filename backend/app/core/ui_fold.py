@@ -118,7 +118,12 @@ class _Folder:
 
     def tool_input_start(self, chunk: UIChunk) -> None:
         start = cast(ToolInputStartChunk, chunk)
-        self._tool_part(start["toolCallId"], start["toolName"])
+        self._mark_provider(self._tool_part(start["toolCallId"], start["toolName"]), start.get("providerExecuted"))
+
+    @staticmethod
+    def _mark_provider(part: JsonObject, provider_executed: object) -> None:
+        if provider_executed is True:
+            part["providerExecuted"] = True
 
     def tool_input_delta(self, chunk: UIChunk) -> None:
         delta = cast(ToolInputDeltaChunk, chunk)
@@ -132,18 +137,21 @@ class _Folder:
         part["type"] = f"{TOOL_PREFIX}{available['toolName']}"
         part["state"] = "input-available"
         part["input"] = available["input"]
+        self._mark_provider(part, available.get("providerExecuted"))
 
     def tool_output_available(self, chunk: UIChunk) -> None:
         output = cast(ToolOutputAvailableChunk, chunk)
         part = self._tool_part(output["toolCallId"], None)
         part["state"] = "output-available"
         part["output"] = output["output"]
+        self._mark_provider(part, output.get("providerExecuted"))
 
     def tool_output_error(self, chunk: UIChunk) -> None:
         error = cast(ToolOutputErrorChunk, chunk)
         part = self._tool_part(error["toolCallId"], None)
         part["state"] = "output-error"
         part["errorText"] = error["errorText"]
+        self._mark_provider(part, error.get("providerExecuted"))
 
     # ── sources / data ───────────────────────────────────────────────────────
 

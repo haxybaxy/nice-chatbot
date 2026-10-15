@@ -69,8 +69,21 @@ def _load_turn(payloads: Sequence[JsonObject]) -> list[BaseMessage]:
         for payload in payloads:
             restored = load(dict(payload), allowed_objects="messages")
             if isinstance(restored, BaseMessage):
-                messages.append(restored)
+                messages.append(_replayable(restored))
     return messages
+
+
+def _replayable(message: BaseMessage) -> BaseMessage:
+    """Drop response-only fields the provider rejects as input: the pages a built-in search consulted
+    (``web_search_call.action.sources``, an ``include`` extra). The stored row keeps them."""
+    if not isinstance(message, AIMessage) or not isinstance(message.content, list):
+        return message
+    for block in cast("list[object]", message.content):
+        if isinstance(block, dict) and block.get("type") == "web_search_call":
+            action = cast("dict[str, object]", block).get("action")
+            if isinstance(action, dict):
+                cast("dict[str, object]", action).pop("sources", None)
+    return message
 
 
 def _rebuild_turn(parts: Sequence[JsonObject]) -> list[BaseMessage]:
@@ -98,6 +111,8 @@ def _rebuild_turn(parts: Sequence[JsonObject]) -> list[BaseMessage]:
             if text:
                 texts.append(text)
         elif part_type.startswith(TOOL_PREFIX):
+            if part.get("providerExecuted"):
+                continue  # the provider ran it inside the turn; the text already carries its citations
             call_id = str(part.get("toolCallId", ""))
             name = part_type.removeprefix(TOOL_PREFIX)
             args = part.get("input")

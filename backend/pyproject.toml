@@ -292,4 +292,5 @@ ignore_names = [
     "input",
     "errorText",
     "finishReason",
+    "providerExecuted",
 ]

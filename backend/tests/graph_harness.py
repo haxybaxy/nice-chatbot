@@ -60,11 +60,16 @@ def tools_for(ctx: RunContext, names: Collection[str], registry: ToolRegistry | 
     return (registry or default_tool_registry()).for_run(ctx, names=names, spec=OPUS)
 
 
+def run_tools(tools: Sequence[BaseTool]) -> RunTools:
+    """Plain LangChain tools as a run's tool set (what `for_run` returns for client tools only)."""
+    return RunTools(client=tuple(tools), names=tuple(sorted(tool.name for tool in tools)))
+
+
 def chat_graph(
     built: BuiltModel, tools: RunTools | Sequence[BaseTool], limits: AgentLimits | None = None
 ) -> AgentGraph:
-    run_tools = tools if isinstance(tools, RunTools) else RunTools.client_only(tools)
-    return build_agent_graph(built, run_tools, limits or AgentLimits(), checkpointer=None, name="chat")
+    resolved = tools if isinstance(tools, RunTools) else run_tools(tools)
+    return build_agent_graph(built, resolved, limits or AgentLimits(), checkpointer=None, name="chat")
 
 
 def prompt(text: str = "hi") -> list[BaseMessage]:

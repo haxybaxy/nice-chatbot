@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from langchain_core.messages import AIMessage
 from langgraph.graph import MessagesState  # pyright: ignore[reportMissingTypeStubs] — no py.typed
@@ -21,6 +22,8 @@ _ANTHROPIC_STOPS: dict[str, StopReason] = {
     "refusal": "refusal",
 }
 _OPENAI_STOPS: dict[str, StopReason] = {"stop": "end", "length": "length", "content_filter": "refusal"}
+# The Responses API reports `status` + `incomplete_details.reason` instead of a finish reason.
+_RESPONSES_INCOMPLETE: dict[str, StopReason] = {"max_output_tokens": "length", "content_filter": "refusal"}
 FINISH_REASONS: dict[StopReason, str] = {
     "end": "stop",
     "length": "length",
@@ -82,5 +85,22 @@ def stop_info_for(message: AIMessage) -> StopInfo | None:
     if isinstance(finish_reason, str):
         reason = _OPENAI_STOPS.get(finish_reason)
         return StopInfo(reason) if reason is not None else None
+    status = metadata.get("status")
+    if status == "incomplete":
+        details = metadata.get("incomplete_details")
+        why = cast("Mapping[str, object]", details).get("reason") if isinstance(details, Mapping) else None
+        return StopInfo(_RESPONSES_INCOMPLETE.get(str(why), "length"))
+    if status == "completed" and _refused(message):
+        return StopInfo("refusal")
     # No provider metadata (a fake, or a provider that reports nothing): tool calls mean "continue".
     return None if message.tool_calls else StopInfo("end")
+
+
+def _refused(message: AIMessage) -> bool:
+    """A Responses API message whose content is a ``refusal`` block."""
+    if not isinstance(message.content, list):
+        return False
+    return any(
+        isinstance(block, Mapping) and cast("Mapping[str, object]", block).get("type") == "refusal"
+        for block in cast("list[object]", message.content)
+    )

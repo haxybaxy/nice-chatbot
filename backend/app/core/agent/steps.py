@@ -11,15 +11,18 @@ from typing import cast
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
+from app.core.agent.citations import citations_in
 from app.core.agent.content import ai_messages, fragments, text_of, tool_messages
 from app.core.agent.events import StepCompleted, UIChunkEvent
 from app.core.agent.parts import PartWriter
+from app.core.agent.server_tools import server_searches
 from app.core.agent.usage import RunUsage, model_name_of, usage_of
 from app.core.ui_stream import ToolInputAvailableChunk
 
 
 def on_message_chunk(writer: PartWriter, message: object) -> list[UIChunkEvent]:
-    """A streamed token chunk from a model node: text, reasoning and tool-input deltas."""
+    """A streamed chunk from a model node: text, reasoning and tool-input deltas, plus what a
+    provider-executed search streams — its ``web_search_call`` block and the citations on the text."""
     if not isinstance(message, AIMessageChunk):
         return []
     out: list[UIChunkEvent] = []
@@ -28,6 +31,10 @@ def on_message_chunk(writer: PartWriter, message: object) -> list[UIChunkEvent]:
     writer.streamed_in_step = True
     for kind, text in fragments(message.content):
         out.extend(writer.delta(kind, text))
+    for citation in citations_in(message.content):
+        out.extend(writer.cite(citation))
+    for search in server_searches(message.content):
+        out.extend(writer.server_search(search))
     for call in message.tool_call_chunks:
         out.extend(_tool_call_chunk(writer, call.get("id"), call.get("name"), call.get("args"), call.get("index")))
     return out
@@ -52,9 +59,10 @@ def _land_model_message(writer: PartWriter, message: AIMessage) -> list[UIChunkE
     if not writer.step_open:
         out.extend(writer.open_step())
     if not writer.streamed_in_step:  # `nostream` model, or a provider that did not stream
-        for kind, text in fragments(message.content):
-            out.extend(writer.delta(kind, text))
+        out.extend(writer.landed_content(message.content))
     out.extend(writer.close_text())
+    for search in server_searches(message.content):  # already announced when they streamed
+        out.extend(writer.server_search(search))
     for call in message.tool_calls:
         call_id = str(call.get("id") or uuid.uuid4().hex)
         if call_id not in writer.started_calls:

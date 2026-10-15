@@ -64,7 +64,11 @@ class TestForRun:
         assert not nothing
         searching = registry.for_run(make_run_context(search=FakeSearchClient()), names=ALL_TOOLS, spec=OPUS)
         assert [tool.name for tool in searching.client] == ["web_fetch", "web_search"]
-        assert (searching.names, searching.unavailable, searching.provider) == (("web_fetch", "web_search"), ("run_code",), ())
+        assert (searching.names, searching.unavailable, searching.provider) == (
+            ("web_fetch", "web_search"),
+            ("run_code",),
+            (),
+        )
         everything = registry.for_run(
             make_run_context(search=FakeSearchClient(), sandbox=FakeSandboxClient()), names=ALL_TOOLS, spec=OPUS
         )

@@ -92,6 +92,8 @@ class ToolInputStartChunk(TypedDict):
     type: Literal["tool-input-start"]
     toolCallId: str
     toolName: str
+    # The provider ran the tool itself (OpenAI's built-in web search); nothing to replay as a tool call.
+    providerExecuted: NotRequired[bool]
 
 
 class ToolInputDeltaChunk(TypedDict):
@@ -105,18 +107,21 @@ class ToolInputAvailableChunk(TypedDict):
     toolCallId: str
     toolName: str
     input: object
+    providerExecuted: NotRequired[bool]
 
 
 class ToolOutputAvailableChunk(TypedDict):
     type: Literal["tool-output-available"]
     toolCallId: str
     output: object
+    providerExecuted: NotRequired[bool]
 
 
 class ToolOutputErrorChunk(TypedDict):
     type: Literal["tool-output-error"]
     toolCallId: str
     errorText: str
+    providerExecuted: NotRequired[bool]
 
 
 class DataChunk(TypedDict):

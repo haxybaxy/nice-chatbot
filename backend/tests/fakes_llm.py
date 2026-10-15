@@ -16,7 +16,7 @@ import json
 import re
 from collections.abc import AsyncIterator, Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal, cast
 from uuid import UUID, uuid4
 
@@ -57,16 +57,21 @@ CATALOG = ModelCatalog(
     openai_supports_vision=False,
 )
 OPUS = CATALOG.get("anthropic:claude-opus-5-5")
-# OpenAI itself: tool-capable, reasoning, searching through the provider's built-in tool.
-GPT = replace(
-    CATALOG.get("openai:llama3.3"),
-    id="openai:gpt-5.5",
-    model_id="gpt-5.5",
-    display_name="GPT-5.5",
-    supports_reasoning=True,
-    native_web_search=True,
-    web_search=True,
+# OpenAI itself, no Tavily or sandbox: the models search through the provider's built-in tool.
+NATIVE_CATALOG = ModelCatalog(
+    model_ids=["anthropic:claude-opus-5-5", "openai:gpt-5.5", "openai:gpt-5.4-mini"],
+    default_id="openai:gpt-5.5",
+    title_id="openai:gpt-5.4-mini",
+    anthropic_configured=False,
+    openai_configured=True,
+    openai_supports_tools=True,
+    openai_supports_reasoning=True,
+    openai_supports_vision=True,
+    openai_native_web_search=True,
+    search_configured=False,
+    sandbox_configured=False,
 )
+GPT = NATIVE_CATALOG.get("openai:gpt-5.5")
 SONNET = CATALOG.get("anthropic:claude-sonnet-5-5")
 HAIKU = CATALOG.get("anthropic:claude-haiku-5-5")
 LOCAL = CATALOG.get("openai:llama3.3")
@@ -110,6 +115,134 @@ def scripted_turn(
     )
 
 
+type Search = tuple[str, Sequence[str]]  # (query, pages consulted)
+type Citation = tuple[str, str | None, int, int]  # (url, title, start_index, end_index)
+
+
+def scripted_openai_turn(
+    text: str = "",
+    *,
+    reasoning: str | None = None,
+    searches: Sequence[Search] = (),
+    pages: Sequence[str] = (),
+    citations: Sequence[Citation] = (),
+    status: str = "completed",
+    incomplete_reason: str | None = None,
+    input_tokens: int = 10,
+    output_tokens: int = 5,
+    model_name: str = "gpt-5.5",
+) -> AIMessage:
+    """A Responses-API-shaped ``AIMessage`` (``responses/v1`` content, what ``ChatOpenAI`` returns for
+    api.openai.com): a reasoning summary, built-in web searches with the pages they consulted, pages
+    the model opened, then text with ``url_citation`` annotations and the response status."""
+    content: list[dict[str, object]] = []
+    if reasoning:
+        content.append(
+            {
+                "type": "reasoning",
+                "id": f"rs_{uuid4().hex[:8]}",
+                "summary": [{"type": "summary_text", "text": reasoning}],
+                "encrypted_content": "enc",
+            }
+        )
+    for query, sources in searches:
+        content.append(
+            {
+                "type": "web_search_call",
+                "id": f"ws_{uuid4().hex[:8]}",
+                "status": "completed",
+                "action": {
+                    "type": "search",
+                    "queries": [query],
+                    "query": query,
+                    "sources": [{"type": "url", "url": url} for url in sources],
+                },
+            }
+        )
+    for url in pages:
+        content.append(
+            {
+                "type": "web_search_call",
+                "id": f"ws_{uuid4().hex[:8]}",
+                "status": "completed",
+                "action": {"type": "open_page", "url": url},
+            }
+        )
+    if text:
+        block: dict[str, object] = {"type": "text", "text": text, "id": f"msg_{uuid4().hex[:8]}"}
+        if citations:
+            block["annotations"] = [
+                {"type": "url_citation", "url": url, "title": title, "start_index": start, "end_index": end}
+                for url, title, start, end in citations
+            ]
+        content.append(block)
+    metadata: dict[str, object] = {"model_name": model_name, "model_provider": "openai", "status": status}
+    if incomplete_reason:
+        metadata["incomplete_details"] = {"reason": incomplete_reason}
+    return AIMessage(
+        content=cast("list[str | dict[str, object]]", content),
+        response_metadata=metadata,
+        usage_metadata={
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        },
+    )
+
+
+def _annotation_chunks(block: Mapping[str, object], index: int) -> list[AIMessageChunk]:
+    """Word chunks of a text block with each ``url_citation`` emitted (text-less) once its span is out."""
+    raw = block.get("annotations")
+    pending = sorted(
+        (cast("dict[str, object]", item) for item in cast("list[object]", raw if isinstance(raw, list) else [])),
+        key=lambda item: cast(int, item.get("end_index", 0)),
+    )
+    chunks: list[AIMessageChunk] = []
+    position = 0
+    for word in _WORDS.findall(str(block.get("text", ""))):
+        chunks.append(AIMessageChunk(content=[{"type": "text", "text": word, "index": index}]))
+        position += len(word)
+        while pending and cast(int, pending[0].get("end_index", 0)) <= position:
+            chunks.append(AIMessageChunk(content=[{"type": "text", "annotations": [pending.pop(0)], "index": index}]))
+    chunks.extend(
+        AIMessageChunk(content=[{"type": "text", "annotations": [annotation], "index": index}])
+        for annotation in pending
+    )
+    return chunks
+
+
+def _summary_chunks(block: Mapping[str, object], index: int) -> list[AIMessageChunk]:
+    """A Responses reasoning item: summary text word by word, then the encrypted item on its own."""
+    raw = block.get("summary")
+    parts = cast("list[object]", raw if isinstance(raw, list) else [])
+    text = "".join(
+        str(cast("Mapping[str, object]", part).get("text", "")) for part in parts if isinstance(part, Mapping)
+    )
+    chunks = [
+        AIMessageChunk(
+            content=[
+                {"type": "reasoning", "summary": [{"index": 0, "type": "summary_text", "text": word}], "index": index}
+            ]
+        )
+        for word in _WORDS.findall(text)
+    ]
+    if block.get("encrypted_content"):
+        chunks.append(
+            AIMessageChunk(
+                content=[
+                    {
+                        "type": "reasoning",
+                        "id": block.get("id"),
+                        "summary": [],
+                        "encrypted_content": block["encrypted_content"],
+                        "index": index,
+                    }
+                ]
+            )
+        )
+    return chunks
+
+
 def _chunks_of(turn: AIMessage) -> list[AIMessageChunk]:
     """Word-level chunks the way a streaming provider emits them."""
     chunks: list[AIMessageChunk] = []
@@ -125,8 +258,12 @@ def _chunks_of(turn: AIMessage) -> list[AIMessageChunk]:
     for block in blocks:
         kind = block.get("type")
         if kind == "text":
-            for word in _WORDS.findall(str(block.get("text", ""))):
-                chunks.append(AIMessageChunk(content=[{"type": "text", "text": word, "index": index}]))
+            chunks.extend(_annotation_chunks(block, index))
+        elif kind == "reasoning":
+            chunks.extend(_summary_chunks(block, index))
+        elif kind == "web_search_call":
+            # langchain-openai emits the whole item once, on `response.output_item.done`.
+            chunks.append(AIMessageChunk(content=[{**block, "index": index}]))
         elif kind == "thinking":
             for word in _WORDS.findall(str(block.get("thinking", ""))):
                 chunks.append(AIMessageChunk(content=[{"type": "thinking", "thinking": word, "index": index}]))

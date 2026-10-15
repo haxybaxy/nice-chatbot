@@ -17,6 +17,7 @@ from app.core.agent.steps import on_message_chunk, on_model_update, on_tool_upda
 from app.core.agent.usage import RunUsage, UsageTotals
 from app.core.exceptions import AppError
 from app.core.logging_config import get_logger
+from app.core.tools.base import SourceRegistry
 from app.core.ui_stream import UI_CHUNK_ADAPTER
 
 logger = get_logger(__name__)
@@ -26,9 +27,9 @@ TOOL_NODES: frozenset[str] = frozenset({"tools", "budget_exceeded"})
 
 
 class Mapper:
-    def __init__(self, streamed_nodes: Collection[str]) -> None:
+    def __init__(self, streamed_nodes: Collection[str], *, sources: SourceRegistry | None = None) -> None:
         self._streamed_nodes = set(streamed_nodes)
-        self.writer = PartWriter()
+        self.writer = PartWriter(sources)
         self.usage = RunUsage()
         self.last_stop: StopInfo | None = None
         self._steps_done = 0

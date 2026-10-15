@@ -17,7 +17,9 @@ from typing import cast
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
+from app.core.agent.citations import cite_content
 from app.core.agent.graph import agent_input, build_agent_graph, run_config, stream_agent
+from app.core.agent.server_tools import ServerSearch, server_searches
 from app.core.agent.state import AgentLimits
 from app.core.agent.usage import UsageTotals, usage_of
 from app.core.exceptions import AppError
@@ -60,8 +62,18 @@ def _describe_call(message: AIMessage) -> str | None:
     return f"{call['name']}: {detail}" if detail else call["name"]
 
 
+def _describe_search(search: ServerSearch) -> str:
+    detail = search.query or search.url or ""
+    return f"{search.tool_name}: {detail}" if detail else search.tool_name
+
+
 class _Progress:
-    def __init__(self) -> None:
+    """What the task card shows, read off the inner graph's updates. Provider-executed searches count
+    as tool calls too, and the final report gets its citations numbered through the run's sources."""
+
+    def __init__(self, ctx: RunContext, write: ChunkWriter) -> None:
+        self._ctx = ctx
+        self._write = write
         self.tool_calls = 0
         self.usage = UsageTotals()
         self.last_action: str | None = None
@@ -75,11 +87,15 @@ class _Progress:
             if not isinstance(message, AIMessage):
                 continue
             self.usage = self.usage + usage_of(message)
+            searches = server_searches(message.content)
+            if searches:
+                self.tool_calls += len(searches)
+                self.last_action = _describe_search(searches[-1])
             if message.tool_calls:
                 self.tool_calls += len(message.tool_calls)
                 self.last_action = _describe_call(message)
             elif message.text:
-                self.final_text = message.text
+                self.final_text = cite_content(message.content, self._ctx.sources, self._write)
 
 
 async def run_research_task(
@@ -94,7 +110,7 @@ async def run_research_task(
 ) -> TaskFinding:
     """Run one task to a compressed finding; failures and budget exhaustion become statuses, not exceptions."""
     semaphore = ctx.research_semaphore if ctx.research_semaphore is not None else contextlib.nullcontext()
-    progress = _Progress()
+    progress = _Progress(ctx, write)
     limits = AgentLimits(
         max_model_calls=task.max_tool_calls + 2,
         max_tool_calls=task.max_tool_calls,

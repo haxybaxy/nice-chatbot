@@ -11,7 +11,7 @@ from app.core.agent.graph import agent_input, run_config
 from app.core.agent.state import AgentLimits, StopInfo, stop_info_for
 from app.core.tools.base import RunContext
 from tests.core.agent.conftest import chat_graph, echo_tools, prompt, scripted_model
-from tests.fakes_llm import scripted_turn
+from tests.fakes_llm import scripted_openai_turn, scripted_turn
 
 
 class TestLoop:
@@ -97,6 +97,22 @@ class TestStopInfo:
         assert stop_info_for(AIMessage(content="x")) == StopInfo("end")
         bare_call = AIMessage(content="", tool_calls=[{"name": "echo", "args": {}, "id": "c", "type": "tool_call"}])
         assert stop_info_for(bare_call) is None
+
+    def test_responses_api_status_and_refusals(self) -> None:
+        assert stop_info_for(scripted_openai_turn("x")) == StopInfo("end")
+        assert stop_info_for(scripted_openai_turn("x", status="incomplete", incomplete_reason="max_output_tokens")) == (
+            StopInfo("length")
+        )
+        assert stop_info_for(scripted_openai_turn("x", status="incomplete", incomplete_reason="content_filter")) == (
+            StopInfo("refusal")
+        )
+        refusal = AIMessage(
+            content=[{"type": "refusal", "refusal": "no"}],
+            response_metadata={"model_provider": "openai", "status": "completed"},
+        )
+        assert stop_info_for(refusal) == StopInfo("refusal")
+        searched = scripted_openai_turn("x", searches=[("q", [])])
+        assert stop_info_for(searched) == StopInfo("end")  # a built-in search is not a pending tool call
 
     def test_finish_reasons(self) -> None:
         assert StopInfo("end").finish_reason == "stop"

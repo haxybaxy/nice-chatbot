@@ -74,11 +74,6 @@ class RunTools:
     def __bool__(self) -> bool:
         return bool(self.client or self.provider)
 
-    @classmethod
-    def client_only(cls, tools: Sequence[BaseTool]) -> RunTools:
-        """Plain LangChain tools, as tests and the research subagents hand them in."""
-        return cls(client=tuple(tools), names=tuple(sorted(tool.name for tool in tools)))
-
 
 def _describe(error: ValidationError) -> str:
     return "; ".join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors())
@@ -128,7 +123,11 @@ class ToolRegistry:
         """The tool names this server can offer at all (the worker's start log)."""
         names: list[str] = []
         for name, tool in self._specs.items():
-            backed = tool.requires is None or (tool.requires == "search" and search) or (tool.requires == "sandbox" and sandbox)
+            backed = (
+                tool.requires is None
+                or (tool.requires == "search" and search)
+                or (tool.requires == "sandbox" and sandbox)
+            )
             if backed or (name == WEB_SEARCH_NAME and native_web_search):
                 names.append(name)
         return sorted(names)
@@ -156,7 +155,9 @@ class ToolRegistry:
                 bound.append(name)
             elif native and tool.requires == "search":
                 continue  # the built-in search reads pages itself
-            elif (tool.requires == "search" and ctx.search is None) or (tool.requires == "sandbox" and ctx.sandbox is None):
+            elif (tool.requires == "search" and ctx.search is None) or (
+                tool.requires == "sandbox" and ctx.sandbox is None
+            ):
                 unavailable.append(name)
             else:
                 client.append(_structured_tool(tool, ctx))
