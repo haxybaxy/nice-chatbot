@@ -13,6 +13,7 @@ run's registry and a chunk writer.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -26,6 +27,9 @@ type ChunkSink = Callable[[UIChunk], None]
 _CITATION_TYPES = frozenset({"url_citation", "citation"})
 # Punctuation a citation marker goes in front of, so "fast [1]." rather than "fast. [1]".
 _TRAILING = ".,;:!?"
+# An inline markdown link, optionally wrapped in parentheses the way OpenAI writes its citations.
+_WRAPPED_LINK = re.compile(r"\(\[[^\]\n]*\]\((https?://[^)\s]+)\)\)")
+_BARE_LINK = re.compile(r"\[[^\]\n]*\]\((https?://[^)\s]+)\)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +139,17 @@ def cite_content(content: object, sources: SourceRegistry, write: ChunkSink) -> 
         for block in blocks_of(content)
         if block.get("type") == "text"
     )
+
+
+def number_links(text: str, sources: SourceRegistry) -> str:
+    """Inline links to numbered sources become their ``[n]`` — research findings are cited that way
+    in the synthesis prompt, whichever search engine the subagent used. Other links stay."""
+
+    def swap(match: re.Match[str]) -> str:
+        source = sources.find(clean_url(match.group(1)))
+        return marker(source.id) if source is not None else match.group(0)
+
+    return _BARE_LINK.sub(swap, _WRAPPED_LINK.sub(swap, text))
 
 
 def register(sources: SourceRegistry, citation: UrlCitation, write: ChunkSink) -> int:

@@ -264,8 +264,10 @@ class TestHappyPath:
         cards = result.of_type("data-research-task")
         done = {str(card["id"]): _data(card) for card in cards if _data(card)["status"] == "done"}
         assert done["a"]["toolCalls"] == 1
-        assert str(done["a"]["summary"]).startswith("Findings:\n- A is fast ([A docs]")
+        # The model's inline link became the number the synthesis prompt works with.
+        assert str(done["a"]["summary"]).startswith("Findings:\n- A is fast [1]\n")
         assert "- B is cheap [2]" in str(done["b"]["summary"])
+        assert "web_search is built into the model" in str(worker.calls[0][0].content)
         running = [_data(card) for card in cards if card["id"] == "b" and _data(card)["status"] == "running"]
         assert running[-1]["lastAction"] == "web_search: B price"
         assert [(chunk["sourceId"], chunk["url"]) for chunk in result.of_type("source-url")] == [

@@ -17,7 +17,7 @@ from typing import cast
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
-from app.core.agent.citations import cite_content
+from app.core.agent.citations import cite_content, number_links
 from app.core.agent.graph import agent_input, build_agent_graph, run_config, stream_agent
 from app.core.agent.server_tools import ServerSearch, server_searches
 from app.core.agent.state import AgentLimits
@@ -95,7 +95,8 @@ class _Progress:
                 self.tool_calls += len(message.tool_calls)
                 self.last_action = _describe_call(message)
             elif message.text:
-                self.final_text = cite_content(message.content, self._ctx.sources, self._write)
+                cited = cite_content(message.content, self._ctx.sources, self._write)
+                self.final_text = number_links(cited, self._ctx.sources)
 
 
 async def run_research_task(
@@ -130,14 +131,10 @@ async def run_research_task(
                     usage=UsageTotals(),
                 )
             write(task_chunk(task, "running"))
-            graph = build_agent_graph(
-                worker,
-                tools.for_run(ctx, names=SUBAGENT_TOOLS, spec=worker.spec),
-                limits,
-                checkpointer=None,
-                name=f"research_task:{task.id}",
-            )
-            events = stream_agent(graph, agent_input(subagent_messages(task, question)), config, ctx=ctx)
+            run_tools = tools.for_run(ctx, names=SUBAGENT_TOOLS, spec=worker.spec)
+            graph = build_agent_graph(worker, run_tools, limits, checkpointer=None, name=f"research_task:{task.id}")
+            messages = subagent_messages(task, question, native_search=run_tools.native_web_search)
+            events = stream_agent(graph, agent_input(messages), config, ctx=ctx)
             async for event in events:
                 _forward(event, progress, task, write)
     except (AppError, TimeoutError) as error:
