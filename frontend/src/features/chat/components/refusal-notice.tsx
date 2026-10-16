@@ -7,7 +7,7 @@ export function RefusalNotice({ refusal }: { refusal: Refusal }) {
   return (
     <div
       role="note"
-      className="not-prose mb-4 flex gap-2 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground"
+      className="not-prose mb-2 flex gap-2 rounded-xl border bg-muted/40 p-3 text-sm text-muted-foreground"
     >
       <ShieldAlertIcon className="mt-0.5 size-4 shrink-0" />
       <div>

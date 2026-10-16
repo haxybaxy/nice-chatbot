@@ -1,7 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
 import type { CreateMessageRequest } from "@/features/chat/types";
@@ -72,6 +72,11 @@ describe("sending a message", () => {
     expect(latestTurn).toHaveTextContent("What is 17*23?");
     expect(latestTurn).toHaveTextContent("17 × 23 = 391.");
     expect(latestTurn).not.toHaveTextContent("Hello! How can I help?");
+    // Copy under the finished answer puts its text on the clipboard (user-event's stub; its
+    // `readText` cannot read back the Node-realm blob it wrote, so the write is what is checked).
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+    await user.click(within(latestTurn).getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("17 × 23 = 391."));
     // The transient `data-conversation-title` reached the header and the sidebar.
     expect(await screen.findByRole("heading", { name: "Multiplication help" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Multiplication help/ })).toBeInTheDocument();

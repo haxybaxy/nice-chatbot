@@ -6,6 +6,7 @@ import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
+  useReasoning,
 } from "@/shared/components/ai-elements/reasoning";
 import { ToolInput, ToolOutput } from "@/shared/components/ai-elements/tool";
 
@@ -13,6 +14,7 @@ import { AssistantActivity } from "./assistant-activity";
 import { CitationAnchor } from "./citation-anchor";
 import { CodeTool } from "./code-tool";
 import { DeepResearchPanel } from "./deep-research-panel";
+import { DisclosureLabel } from "./disclosure-label";
 import { RefusalNotice } from "./refusal-notice";
 import { SourceChips } from "./source-chips";
 import { ToolPartShell } from "./tool-part-shell";
@@ -65,8 +67,14 @@ function AssistantBlockView({
   switch (block.kind) {
     case "reasoning":
       return (
-        <Reasoning isStreaming={isStreaming && block.streaming} defaultOpen={false}>
-          <ReasoningTrigger />
+        <Reasoning
+          isStreaming={isStreaming && block.streaming}
+          defaultOpen={false}
+          className="mb-2"
+        >
+          <ReasoningTrigger className="w-auto gap-1">
+            <ReasoningLabel />
+          </ReasoningTrigger>
           <ReasoningContent>{block.text}</ReasoningContent>
         </Reasoning>
       );
@@ -79,6 +87,21 @@ function AssistantBlockView({
     case "refusal":
       return <RefusalNotice refusal={block.data} />;
   }
+}
+
+/**
+ * The reasoning line, as ChatGPT shows it: "Thinking…" while it streams, "Thought for N
+ * seconds" after (the vendored trigger's wording, without its icon — the same line as a tool's).
+ */
+function ReasoningLabel() {
+  const { isStreaming, isOpen, duration } = useReasoning();
+  const busy = isStreaming || duration === 0;
+  const text = busy
+    ? "Thinking…"
+    : duration === undefined
+      ? "Thought for a few seconds"
+      : `Thought for ${duration} seconds`;
+  return <DisclosureLabel text={text} busy={busy} open={isOpen} />;
 }
 
 function TextBlock({ text, isStreaming }: { text: string; isStreaming: boolean }) {

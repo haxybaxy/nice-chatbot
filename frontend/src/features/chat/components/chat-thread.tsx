@@ -69,6 +69,7 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
       key={message.id}
       message={message}
       isStreaming={isBusy && message === lastMessage && message.role === "assistant"}
+      isLast={message === lastMessage}
     />
   );
 
