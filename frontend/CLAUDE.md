@@ -195,8 +195,8 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
 - **knip** entries are `index.html`, `src/features/*/index.ts` and the vendored registry files
   (next bullet) — a feature without a barrel reports every file in it as unused. Unused exports
   are warnings: trim them in our own code.
-  Packages only CSS imports (`tailwindcss`, `shadcn`, `tw-animate-css`, `@fontsource-variable/geist`)
-  are in `ignoreDependencies` because knip doesn't follow `@import`.
+  Packages only CSS imports (`tailwindcss`, `shadcn`, `tw-animate-css`) are in
+  `ignoreDependencies` because knip doesn't follow `@import`.
 - **Vendored registry code** — shadcn `shared/components/ui/**`, Vercel AI Elements
   `shared/components/ai-elements/**` and `shared/hooks/use-mobile.ts` — is kept as shipped so a
   re-add diffs cleanly against upstream. It is exempt from the size / complexity gates: ESLint
