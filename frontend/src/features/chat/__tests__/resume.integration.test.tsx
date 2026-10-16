@@ -45,8 +45,9 @@ describe("resuming a run", () => {
     expect(assistant).toHaveLength(1);
     // `start.messageId` is the persisted id, so the message carries it.
     expect(assistant[0]).toHaveAttribute("data-message-id", ASSISTANT_MESSAGE_ID);
+    // The pending dot that covered the reconnect is gone once the answer is in.
     await waitFor(() =>
-      expect(screen.queryByText(/picking up where it left off/)).not.toBeInTheDocument()
+      expect(screen.queryByRole("status", { name: "Waiting for a response" })).toBeNull()
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).toBeInTheDocument());
   });

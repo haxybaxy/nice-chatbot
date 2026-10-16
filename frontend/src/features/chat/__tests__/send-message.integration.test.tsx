@@ -64,9 +64,14 @@ describe("sending a message", () => {
         tools: { webSearch: true, code: false },
       },
     ]);
-    // The user's message is in the thread and the answer is one assistant message.
+    // The user's message is in the thread and the answer is one assistant message; both make
+    // up the latest turn, the block pinned to the top of the viewport while the answer comes.
     expect(screen.getByText("What is 17*23?")).toBeInTheDocument();
     expect(screen.getAllByTestId("message-assistant")).toHaveLength(2);
+    const latestTurn = screen.getByTestId("latest-turn");
+    expect(latestTurn).toHaveTextContent("What is 17*23?");
+    expect(latestTurn).toHaveTextContent("17 × 23 = 391.");
+    expect(latestTurn).not.toHaveTextContent("Hello! How can I help?");
     // The transient `data-conversation-title` reached the header and the sidebar.
     expect(await screen.findByRole("heading", { name: "Multiplication help" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Multiplication help/ })).toBeInTheDocument();

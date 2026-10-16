@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it } from "vitest";
@@ -35,6 +35,7 @@ function scriptFeeder(chunks: UIMessageChunk[], events: ReturnType<typeof contro
 }
 
 const activity = () => screen.getByTestId("assistant-activity");
+const PENDING = { name: "Waiting for a response" };
 
 describe("the activity line", () => {
   it("says what the assistant is doing, from the last step's parts, until its answer starts", async () => {
@@ -49,14 +50,18 @@ describe("the activity line", () => {
       "What changed in Python 3.14?"
     );
     await user.keyboard("{Enter}");
-    // Before the first chunk the thread shows its own placeholder; the message does not exist yet.
-    expect(await screen.findByText("Thinking…")).toBeInTheDocument();
+    // Before the first chunk the thread shows the pending dot under the user's message, where
+    // the answer will appear; the message does not exist yet.
+    const pending = await screen.findByRole("status", PENDING);
+    expect(screen.getByTestId("latest-turn")).toContainElement(pending);
     expect(screen.queryByTestId("assistant-activity")).toBeNull();
 
-    // `start` creates the message: its activity line takes over from the thread's placeholder.
+    // `start` creates the message: its activity line takes over, with the same dot — one at a time.
     feed.through("start-step");
-    await waitFor(() => expect(activity()).toHaveTextContent("Working…"));
-    expect(screen.queryByText("Thinking…")).toBeNull();
+    await waitFor(() =>
+      expect(within(activity()).getByRole("status", PENDING)).toBeInTheDocument()
+    );
+    expect(screen.getAllByRole("status", PENDING)).toHaveLength(1);
 
     // The built-in search: running, then landed with no text yet.
     feed.through("tool-input-available");

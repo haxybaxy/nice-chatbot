@@ -3,12 +3,16 @@ import { isToolUIPart } from "ai";
 
 import { Shimmer } from "@/shared/components/ai-elements/shimmer";
 
+import { ResponsePending } from "./response-pending";
 import type { ChatMessagePart, ChatToolPart } from "../types";
 import { hostnameOf } from "../utils/citations";
 import { readTitle, searchedForTitle } from "../utils/web-tools";
 import { TOOL_PART_TYPES } from "../utils/wire-parts";
 
 type AnyToolPart = ChatToolPart | DynamicToolUIPart;
+
+/** What the activity line shows: a sentence about a tool, or just the dot. */
+type Activity = { kind: "label"; text: string } | { kind: "pending" };
 
 /** The parts of the message's last step: everything after the last `step-start`. */
 function lastStep(parts: readonly ChatMessagePart[]): readonly ChatMessagePart[] {
@@ -67,47 +71,52 @@ function landedLabel(part: AnyToolPart): string {
 }
 
 /**
- * The one line describing what the assistant is doing right now, from the parts of its last
- * step: a running tool, else — until the step's text starts — the web tool that just finished,
- * else streaming reasoning, else just "Working…". Nothing once the step has text.
+ * What the assistant is doing right now, from the parts of its last step: a running tool,
+ * else — until the step's text starts — the web tool that just finished, else the pending dot.
+ * Nothing once the step has text, and nothing while reasoning streams: the reasoning block's
+ * own trigger already says "Thinking…".
  */
-function activityText(parts: readonly ChatMessagePart[]): string | null {
+function currentActivity(parts: readonly ChatMessagePart[]): Activity | null {
   const step = lastStep(parts);
   const tools = step.filter(isToolUIPart);
   const running = findLast(tools, isRunning);
   if (running) {
-    return runningLabel(running);
+    return { kind: "label", text: runningLabel(running) };
   }
   if (step.some((part) => part.type === "text")) {
     return null;
   }
   const landed = findLast(tools, isWebTool);
   if (landed) {
-    return landedLabel(landed);
+    return { kind: "label", text: landedLabel(landed) };
   }
   if (step.some((part) => part.type === "reasoning" && part.state === "streaming")) {
-    return "Thinking…";
+    return null;
   }
-  return "Working…";
+  return { kind: "pending" };
 }
 
 /**
  * The activity line under a streaming assistant message. Rendered only while the response
- * streams (`AssistantMessage` gates it); the thread's own "Thinking…" covers the gap before the
- * first chunk.
+ * streams (`AssistantMessage` gates it); before the message exists the thread shows the same
+ * dot where the message will appear.
  */
 export function AssistantActivity({ parts }: { parts: readonly ChatMessagePart[] }) {
-  const text = activityText(parts);
-  if (!text) {
+  const activity = currentActivity(parts);
+  if (!activity) {
     return null;
   }
-  // `text-sm` only: the shimmer paints its gradient in `--color-muted-foreground` through
-  // `bg-clip-text` + `text-transparent`, which a `text-*` colour class would override.
   return (
     <div data-testid="assistant-activity">
-      <Shimmer duration={1} className="text-sm">
-        {text}
-      </Shimmer>
+      {activity.kind === "pending" ? (
+        <ResponsePending />
+      ) : (
+        // `text-sm` only: the shimmer paints its gradient in `--color-muted-foreground` through
+        // `bg-clip-text` + `text-transparent`, which a `text-*` colour class would override.
+        <Shimmer duration={1} className="text-sm">
+          {activity.text}
+        </Shimmer>
+      )}
     </div>
   );
 }
