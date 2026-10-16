@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import type { CreateMessageRequest } from "@/features/chat/types";
 import { API_ENDPOINTS } from "@/shared/config/api-endpoints";
+import { APP_NAME } from "@/shared/constants/app";
 import { DEFAULT_MODEL_ID, makeConversation, makeModel, makeRun } from "@/test/msw/fixtures/chat";
 import { refusalRun, textRun, titleChunk } from "@/test/msw/fixtures/run-chunks";
 import { CONVERSATION_ID, restingConversationDetail } from "@/test/msw/handlers/chat";
@@ -77,8 +78,9 @@ describe("sending a message", () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText");
     await user.click(within(latestTurn).getByRole("button", { name: "Copy" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("17 × 23 = 391."));
-    // The transient `data-conversation-title` reached the header and the sidebar.
+    // The transient `data-conversation-title` reached the heading, the tab title and the sidebar.
     expect(await screen.findByRole("heading", { name: "Multiplication help" })).toBeInTheDocument();
+    expect(document.title).toBe(`Multiplication help · ${APP_NAME}`);
     expect(screen.getByRole("link", { name: /Multiplication help/ })).toBeInTheDocument();
     // Back to ready: the composer was cleared, so Submit is disabled again.
     await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled());

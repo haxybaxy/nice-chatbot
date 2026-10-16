@@ -5,21 +5,25 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from "@/shared/components/ai-elements/conversation";
+import { APP_NAME } from "@/shared/constants/app";
 import { cn } from "@/shared/utils";
 
 import { ChatComposer } from "./chat-composer";
 import { ChatErrorAlert } from "./chat-error-alert";
 import { ChatMessageItem } from "./chat-message-item";
 import { ResponsePending } from "./response-pending";
-import { useChatModels } from "../hooks/use-chat-models";
-import { toRunRequestOptions, useComposerSettings } from "../hooks/use-composer-settings";
+import { type ComposerSettings, toRunRequestOptions } from "../hooks/use-composer-settings";
 import { useConversationChat } from "../hooks/use-conversation-chat";
-import type { ChatMessage, ConversationDetail } from "../types";
+import type { ChatMessage, ChatModel, ConversationDetail } from "../types";
 
 interface ChatThreadProps {
   teamId: string;
   /** The persisted conversation this thread mounted with (remount — `key` — to switch). */
   detail: ConversationDetail;
+  /** The composer's choices, owned by the page (the model picker lives in its header). */
+  settings: ComposerSettings;
+  onSettingsChange: (patch: Partial<ComposerSettings>) => void;
+  models: readonly ChatModel[];
 }
 
 /**
@@ -49,11 +53,14 @@ function splitLatestTurn(
  * nothing has arrived yet, including the wait while a reopened run reconnects — sits in that
  * block, where the answer will appear.
  */
-export function ChatThread({ teamId, detail }: ChatThreadProps) {
-  const models = useChatModels();
-  const catalog = models.data ?? [];
-  const [settings, updateSettings] = useComposerSettings();
-  const runOptions = toRunRequestOptions(settings, catalog);
+export function ChatThread({
+  teamId,
+  detail,
+  settings,
+  onSettingsChange,
+  models,
+}: ChatThreadProps) {
+  const runOptions = toRunRequestOptions(settings, models);
   const chat = useConversationChat({ teamId, detail, getRunOptions: () => runOptions });
   // The messages the thread mounted with; anything after them was sent from here.
   const [mountedCount] = useState(chat.messages.length);
@@ -93,7 +100,7 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
-      <div className="shrink-0 px-4 pb-4">
+      <div className="shrink-0 px-4 pb-2">
         {chat.error && (
           <ChatErrorAlert
             error={chat.error}
@@ -112,9 +119,12 @@ export function ChatThread({ teamId, detail }: ChatThreadProps) {
             }}
             onStop={() => void chat.stop()}
             settings={settings}
-            onSettingsChange={updateSettings}
-            models={catalog}
+            onSettingsChange={onSettingsChange}
+            models={models}
           />
+          <p className="py-2 text-center text-xs text-muted-foreground">
+            {APP_NAME} can make mistakes. Check important info.
+          </p>
         </div>
       </div>
     </div>
