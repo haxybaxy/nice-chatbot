@@ -136,9 +136,12 @@ label="…" />}</form.AppField>` (the bound `TextField` reads its value, errors 
   team-scoped lives under `/app/teams/:teamId` in `layouts/ChatLayout.tsx`, which calls
   `useCurrentTeam()` (validates the id against `GET /api/teams`, remembers it, redirects an
   unknown one) and owns the shadcn `SidebarProvider` + `ChatSidebar` (team switcher, "New
-  chat", the conversation list, the user/theme/sign-out footer) + a `h-svh` `SidebarInset` for
-  the thread; `chat` and `chat/:conversationId` both render `ChatPage`. There is no `home`
-  feature any more: a signed-in user always lands in a chat.
+  chat" — also `⌘⇧O` —, the conversation list by day, the account menu with the theme and sign
+  out) + a `h-svh` `SidebarInset` for the thread; `chat` and `chat/:conversationId` both render
+  `ChatPage`. The page owns the composer's choices (`useComposerSettings`) because the model
+  picker sits in `ChatHeader` next to the sidebar toggle while the thread sends with them; the
+  conversation title is the browser tab's title and an sr-only heading, not visible chrome.
+  There is no `home` feature any more: a signed-in user always lands in a chat.
 - **Styling**: Tailwind utilities + shadcn tokens from `globals.css` (`bg-background`,
   `text-muted-foreground`, …). Dark mode is the `.dark` class set by `ThemeProvider`. `cn()` from
   `@/shared/utils` for class merging.
