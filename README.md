@@ -65,10 +65,13 @@ just db-down    # stop Postgres (data is kept)
 
 Environment variables are for secrets; everything else has a code default. In `backend/.env` set
 `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` (each key activates its provider's models in the
-picker; the first available model becomes the default), `TAVILY_API_KEY` for web search,
-`SANDBOX_BACKEND=docker` (after `just sandbox-pull` in `backend/`) for code execution, and
-`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` for tracing. Everything degrades gracefully when
-unset: that provider's models, that tool or tracing simply disappear. A local OpenAI-compatible
-server (vLLM, Ollama, unsloth) is the one non-secret override: `OPENAI_BASE_URL` plus its models
-in `LLM_MODELS`. The containerized backend
-(API + worker) is `docker compose --profile app up --build` in `backend/`.
+picker; the first available model becomes the default), `SANDBOX_BACKEND=docker` (after
+`just sandbox-pull` in `backend/`) for code execution, and `LANGFUSE_PUBLIC_KEY` /
+`LANGFUSE_SECRET_KEY` for tracing. Web search needs no extra key for the OpenAI models: they search
+with OpenAI's built-in tool (billed per call by OpenAI). `TAVILY_API_KEY` gives every other model
+(Claude, local servers) web search through Tavily, and `LLM_OPENAI_WEB_SEARCH=false` makes the
+OpenAI models use it too. Everything degrades gracefully when unset: that provider's models, that
+tool or tracing simply disappear, and the composer greys out what the server cannot do. A local
+OpenAI-compatible server (vLLM, Ollama, unsloth) is the one non-secret override: `OPENAI_BASE_URL`
+plus its models in `LLM_MODELS`. The containerized backend (API + worker) is
+`docker compose --profile app up --build` in `backend/`.

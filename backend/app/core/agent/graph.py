@@ -27,7 +27,6 @@ from typing import cast
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph  # pyright: ignore[reportMissingTypeStubs] — no py.typed
 from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs] — no py.typed
@@ -36,7 +35,7 @@ from langgraph.runtime import Runtime
 from app.core.agent.state import AgentLimits, AgentState, StopInfo, stop_info_for
 from app.core.llm.chat_models import BuiltModel
 from app.core.tools.base import RunContext
-from app.core.tools.registry import BUDGET_EXHAUSTED, build_tool_node
+from app.core.tools.registry import BUDGET_EXHAUSTED, RunTools, build_tool_node
 
 AGENT_NODE = "agent"
 TOOLS_NODE = "tools"
@@ -76,14 +75,15 @@ def stream_agent(
 
 def build_agent_graph(
     model: BuiltModel,
-    tools: Sequence[BaseTool],
+    tools: RunTools,
     limits: AgentLimits,
     *,
     checkpointer: BaseCheckpointSaver[str] | None,
     name: str = "chat",
 ) -> AgentGraph:
-    """Compile the loop for one run. ``tools`` are already filtered for the run (``ToolRegistry.for_run``)."""
-    tool_list = list(tools)
+    """Compile the loop for one run. ``tools`` are already resolved for the run (``ToolRegistry.for_run``):
+    the model is bound to client and provider tools alike, the ``ToolNode`` runs only the client ones."""
+    bound = tools.bound
 
     async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, object]:
         calls = state.get("model_calls", 0)
@@ -93,8 +93,8 @@ def build_agent_graph(
             return {"stop": StopInfo("cancelled")}
         # The last permitted call never gets tools, so the loop always ends with an answer.
         last_call = calls >= limits.max_model_calls - 1
-        use_tools = bool(tool_list) and not state.get("final_answer_only", False) and not last_call
-        response = await model.runnable(tool_list if use_tools else ()).ainvoke(state["messages"])
+        use_tools = bool(tools) and not state.get("final_answer_only", False) and not last_call
+        response = await model.runnable(bound if use_tools else ()).ainvoke(state["messages"])
         update: dict[str, object] = {"messages": [response], "model_calls": calls + 1}
         if response.tool_calls:
             update["tool_calls_made"] = state.get("tool_calls_made", 0) + len(response.tool_calls)
@@ -128,7 +128,7 @@ def build_agent_graph(
 
     graph = StateGraph(AgentState, context_schema=RunContext)
     graph.add_node(AGENT_NODE, agent)
-    graph.add_node(TOOLS_NODE, build_tool_node(tool_list))
+    graph.add_node(TOOLS_NODE, build_tool_node(tools.client))
     graph.add_node(BUDGET_NODE, budget_exceeded)
     graph.add_edge(START, AGENT_NODE)
     graph.add_conditional_edges(AGENT_NODE, route_after_agent, [TOOLS_NODE, BUDGET_NODE, END])

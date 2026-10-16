@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { linkCitations } from "@/features/chat/utils/citations";
+import { linkCitations, stripTracking } from "@/features/chat/utils/citations";
 import { groupConversationsByDay } from "@/features/chat/utils/conversations";
 import { makeConversation } from "@/test/msw/fixtures/chat";
 
@@ -28,6 +28,29 @@ describe("linkCitations", () => {
   });
 });
 
+describe("stripTracking", () => {
+  it("drops the utm_* parameters and keeps the rest, hash included", () => {
+    expect(stripTracking("https://a.example/p?utm_source=chatgpt.com&x=1&utm_medium=m#h")).toBe(
+      "https://a.example/p?x=1#h"
+    );
+  });
+
+  it("leaves no dangling '?' when the tracking was the whole query", () => {
+    expect(stripTracking("https://a.example/p?utm_source=chatgpt.com")).toBe("https://a.example/p");
+  });
+
+  it("is the identity for a clean URL and for something that is not one", () => {
+    expect(stripTracking("https://a.example/p")).toBe("https://a.example/p");
+    expect(stripTracking("not a url")).toBe("not a url");
+  });
+
+  it("brings two spellings of one address to the same string", () => {
+    expect(stripTracking("https://A.example/p?q=a%20b&utm_source=x")).toBe(
+      stripTracking("https://a.example/p?q=a+b")
+    );
+  });
+});
+
 describe("groupConversationsByDay", () => {
   it("buckets by the local day of the last message, dropping empty groups", () => {
     const now = new Date(2026, 9, 14, 15, 0, 0);
@@ -38,15 +61,20 @@ describe("groupConversationsByDay", () => {
         makeConversation({ id: "a", lastMessageAt: at(0, 1) }),
         makeConversation({ id: "b", lastMessageAt: at(1, 23) }),
         makeConversation({ id: "c", lastMessageAt: at(2) }),
-        makeConversation({ id: "d", lastMessageAt: at(30) }),
+        makeConversation({ id: "d", lastMessageAt: at(7) }),
+        makeConversation({ id: "e", lastMessageAt: at(30) }),
+        makeConversation({ id: "f", lastMessageAt: at(31) }),
       ],
       now
     );
 
+    // A boundary day (7, 30) counts from the start of today, so it is still inside its window.
     expect(groups.map((group) => [group.label, group.items.map((item) => item.id)])).toEqual([
       ["Today", ["a"]],
       ["Yesterday", ["b"]],
-      ["Earlier", ["c", "d"]],
+      ["Previous 7 days", ["c", "d"]],
+      ["Previous 30 days", ["e"]],
+      ["Older", ["f"]],
     ]);
   });
 });

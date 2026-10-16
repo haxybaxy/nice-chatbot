@@ -20,7 +20,6 @@ from app.core.agent.state import AgentLimits
 from app.core.agent.turn_graphs import TurnPrompt, TurnSetup, TurnStream, chat_turn, research_turn
 from app.core.agent.turn_support import (
     LEASE_LOST,
-    WEB_TOOLS,
     TurnProgress,
     TurnSink,
     await_title,
@@ -181,20 +180,19 @@ class RunAssistantTurn:
 
     async def _stream(self, turn: TurnInput, progress: TurnProgress, spec: ModelSpec) -> TurnStream:
         setup = self._setup(turn, progress.ctx, spec)
-        tool_names = enabled_tools(turn.options)
+        prompt = self._prompt(turn)
         if turn.mode == RESEARCH_MODE:
-            prompt = self._prompt(turn, tool_names | WEB_TOOLS)
             return await research_turn(setup, prompt, question=turn.question)
-        return await chat_turn(setup, self._prompt(turn, tool_names))
+        return await chat_turn(setup, prompt)
 
     @staticmethod
-    def _prompt(turn: TurnInput, tool_names: set[str]) -> TurnPrompt:
+    def _prompt(turn: TurnInput) -> TurnPrompt:
         return TurnPrompt(
             product_name=settings.project_name,
             workspace_name=turn.workspace_name,
             user_display_name=turn.user_display_name,
             today=datetime.now(UTC).date(),
-            enabled_tools=tool_names,
+            requested_tools=enabled_tools(turn.options),
             history=turn.history,
         )
 

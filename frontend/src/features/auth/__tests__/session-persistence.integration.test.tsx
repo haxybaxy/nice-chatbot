@@ -70,7 +70,9 @@ describe("session persistence across reloads", () => {
     // Let the chat shell settle first: clicking while the sidebar is still mounting can land on
     // a button React has already replaced (a flaky no-op under load).
     await screen.findByRole("textbox", { name: "Message" });
-    await user.click(await screen.findByRole("button", { name: /sign out/i }));
+    // Sign out lives in the sidebar's account menu.
+    await user.click(await screen.findByRole("button", { name: /^Account:/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /sign out/i }));
 
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
     await waitFor(() => expect(revoked).toBe(true));

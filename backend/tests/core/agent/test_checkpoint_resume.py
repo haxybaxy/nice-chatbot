@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 
 import pytest
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import Field
 
@@ -15,7 +14,7 @@ from app.core.agent.graph import build_agent_graph, run_config
 from app.core.agent.state import AgentLimits
 from app.core.schemas import BaseSchema
 from app.core.tools.base import RunContext, Tool, ToolCallContext, ToolResult, ToolSpec
-from app.core.tools.registry import ToolRegistry
+from app.core.tools.registry import RunTools, ToolRegistry
 from tests.fakes_llm import OPUS, make_run_context, scripted_turn
 from tests.graph_harness import collect, prompt, scripted_model
 
@@ -40,7 +39,7 @@ class _Flaky:
         return ToolResult(content=f"value of {args.key}", output={"key": args.key})
 
 
-def _tools(ctx: RunContext, flaky: _Flaky) -> list[BaseTool]:
+def _tools(ctx: RunContext, flaky: _Flaky) -> RunTools:
     spec: ToolSpec = Tool(
         name="lookup", description="Looks up a key.", args_schema=LookupIn, requires=None, run=flaky.run
     )

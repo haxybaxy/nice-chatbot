@@ -311,9 +311,10 @@ library forces a rule off, scope it to that file with a commented header.
 ## Chat runtime conventions
 
 - Claude is reached only through `ChatAnthropic` built by `build_chat_model`
-  (`app/core/llm/models.py`); `ChatOpenAI` serves OpenAI-compatible servers only (`openai:claude-*`
-  is rejected by settings). Never import `anthropic`; `openai` only in `app/core/llm/errors.py`;
-  `langchain_anthropic` / `langchain_openai` only in `models.py`; `langfuse` only in
+  (`app/core/llm/chat_models.py`); `ChatOpenAI` serves OpenAI itself (Responses API) and other
+  OpenAI-compatible servers (Chat Completions) — `openai:claude-*` is rejected by settings. Never
+  import `anthropic`; `openai` only in `app/core/llm/errors.py`;
+  `langchain_anthropic` / `langchain_openai` only in `chat_models.py`; `langfuse` only in
   `app/core/observability.py`; `langgraph.checkpoint.postgres` only in `app/core/agent/checkpointer.py`
   (ruff `TID251`).
 - Histories are append-only. Same-provider turns replay the stored `provider_messages` verbatim
@@ -325,6 +326,13 @@ library forces a rule off, scope it to that file with a commented header.
 - Sources are numbered per run (`SourceRegistry`), cited as `[n]`, and streamed once as
   `source-url` parts. Tools return `(content_for_model, artifact)`; a failing tool is an error
   `ToolMessage`, never a failed run.
+- `ToolRegistry.for_run` returns a `RunTools` (client tools for the `ToolNode`, provider tools bound
+  next to them, the names bound and the names requested but unavailable); the system prompt is built
+  from it, never from the requested names. OpenAI's built-in `web_search` is a provider tool: its
+  `web_search_call` blocks and `url_citation` annotations are mapped by `app/core/agent/server_tools.py`
+  and `app/core/agent/citations.py` into `providerExecuted` tool parts and numbered sources, and the
+  neutral history rebuild skips provider-executed parts. api.openai.com is always the Responses API
+  (`store=False`, `include` encrypted reasoning + consulted pages); other servers stay on Chat Completions.
 - `reportUnknown*` is relaxed per file, with a header naming the library boundary, only in the
   LangChain/LangGraph/Langfuse-facing modules (`llm/models.py`, `llm/history.py`,
   `tools/registry.py`, `agent/graph.py`, `agent/stream.py`, `research/graph.py`,

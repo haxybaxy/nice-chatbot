@@ -28,19 +28,27 @@ const text = (id: string, content: string): UIMessageChunk[] => [
   { type: "text-delta", id, delta: content },
   { type: "text-end", id },
 ];
-/** A tool call that was emitted at once (no input deltas) and answered. */
+/**
+ * A tool call that was emitted at once (no input deltas) and answered. `providerExecuted` marks
+ * one the model's provider ran inside the model call (OpenAI's built-in search), which the
+ * backend forwards on every chunk of the call.
+ */
 const toolCall = (
   toolCallId: string,
   toolName: string,
   input: unknown,
-  result: { output: unknown } | { errorText: string }
-): UIMessageChunk[] => [
-  { type: "tool-input-start", toolCallId, toolName },
-  { type: "tool-input-available", toolCallId, toolName, input },
-  "output" in result
-    ? { type: "tool-output-available", toolCallId, output: result.output }
-    : { type: "tool-output-error", toolCallId, errorText: result.errorText },
-];
+  result: { output: unknown } | { errorText: string },
+  { providerExecuted }: { providerExecuted?: true } = {}
+): UIMessageChunk[] => {
+  const flag = providerExecuted ? { providerExecuted } : {};
+  return [
+    { type: "tool-input-start", toolCallId, toolName, ...flag },
+    { type: "tool-input-available", toolCallId, toolName, input, ...flag },
+    "output" in result
+      ? { type: "tool-output-available", toolCallId, output: result.output, ...flag }
+      : { type: "tool-output-error", toolCallId, errorText: result.errorText, ...flag },
+  ];
+};
 
 /** A plain answer. */
 export function textRun({
@@ -94,6 +102,72 @@ export function webSearchRun({ messageId = ASSISTANT_MESSAGE_ID } = {}): UIMessa
     { type: "finish-step" },
     { type: "start-step" },
     ...text("t1", "Python 3.14 adds template strings [1]."),
+    ...finish,
+  ];
+}
+
+/** The cited page as a built-in search links it in the answer: `SOURCE.url` plus OpenAI's tracking parameter. */
+export const NATIVE_SOURCE = {
+  ...SOURCE,
+  linkUrl: `${SOURCE.url}?utm_source=chatgpt.com`,
+} as const;
+
+/** A built-in search cites with an inline markdown link, not a `[n]`. */
+const NATIVE_ANSWER = `Python 3.14 adds template strings ([What's New](${NATIVE_SOURCE.linkUrl})).`;
+
+/** The provider-executed search: the pages it consulted, url only. */
+const nativeSearch = () =>
+  toolCall(
+    "ws_1",
+    "web_search",
+    { query: WEB_SEARCH_QUERY },
+    {
+      output: { query: WEB_SEARCH_QUERY, results: [{ url: SOURCE.url, title: null, snippet: "" }] },
+    },
+    { providerExecuted: true }
+  );
+
+/** The provider-executed fetch: which page the model opened, no number and no text. */
+const nativeFetch = () =>
+  toolCall(
+    "wf_1",
+    "web_fetch",
+    { url: SOURCE.url },
+    {
+      output: {
+        sourceId: null,
+        url: SOURCE.url,
+        title: null,
+        content: "",
+        chars: 0,
+        truncated: false,
+      },
+    },
+    { providerExecuted: true }
+  );
+
+/**
+ * An OpenAI model's built-in search: one step — the provider-executed search, the answer with
+ * its citation as an inline link, then the `source-url` the backend derived from that link.
+ */
+export function nativeWebSearchRun({ messageId = ASSISTANT_MESSAGE_ID } = {}): UIMessageChunk[] {
+  return [
+    ...start(messageId),
+    ...nativeSearch(),
+    ...text("t1", NATIVE_ANSWER),
+    { type: "source-url", ...SOURCE },
+    ...finish,
+  ];
+}
+
+/** The same, with the model opening the page it found (`web_fetch`, provider-executed) before answering. */
+export function nativeWebFetchRun({ messageId = ASSISTANT_MESSAGE_ID } = {}): UIMessageChunk[] {
+  return [
+    ...start(messageId),
+    ...nativeSearch(),
+    ...nativeFetch(),
+    ...text("t1", NATIVE_ANSWER),
+    { type: "source-url", ...SOURCE },
     ...finish,
   ];
 }

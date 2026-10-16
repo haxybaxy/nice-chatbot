@@ -6,33 +6,32 @@ import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
+  useReasoning,
 } from "@/shared/components/ai-elements/reasoning";
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from "@/shared/components/ai-elements/sources";
 import { ToolInput, ToolOutput } from "@/shared/components/ai-elements/tool";
 
+import { AssistantActivity } from "./assistant-activity";
 import { CitationAnchor } from "./citation-anchor";
 import { CodeTool } from "./code-tool";
 import { DeepResearchPanel } from "./deep-research-panel";
+import { DisclosureLabel } from "./disclosure-label";
 import { RefusalNotice } from "./refusal-notice";
+import { SourceChips } from "./source-chips";
 import { ToolPartShell } from "./tool-part-shell";
 import { WebFetchTool } from "./web-fetch-tool";
 import { WebSearchTool } from "./web-search-tool";
 import type { ChatMessage, ChatToolPart } from "../types";
 import { type AssistantBlock, toAssistantContent } from "../utils/assistant-blocks";
 import { CitationSourcesContext } from "../utils/citation-sources";
-import { hostnameOf, linkCitations } from "../utils/citations";
+import { linkCitations } from "../utils/citations";
 import { TOOL_PART_TYPES } from "../utils/wire-parts";
 
 const markdownComponents = { a: CitationAnchor };
 
 /**
- * An assistant message's parts, in order: merged reasoning, the sources it cited, text with
- * `[n]` citations linked, each tool call in its shell, the deep-research panel and refusals.
+ * An assistant message's parts, in order: the deep-research panel, then merged reasoning, text
+ * with its citations as pills, each tool call in its shell and refusals; under them the
+ * activity line while the response streams, and the chips of the sources it cited.
  */
 export function AssistantMessage({
   message,
@@ -49,23 +48,11 @@ export function AssistantMessage({
   return (
     <CitationSourcesContext.Provider value={sources}>
       {research && <DeepResearchPanel research={research} isStreaming={isStreaming} />}
-      {sources.length > 0 && (
-        <Sources>
-          <SourcesTrigger count={sources.length} />
-          <SourcesContent>
-            {sources.map((source) => (
-              <Source
-                key={source.sourceId}
-                href={source.url}
-                title={`[${source.sourceId}] ${source.title ?? hostnameOf(source.url)}`}
-              />
-            ))}
-          </SourcesContent>
-        </Sources>
-      )}
       {blocks.map((block) => (
         <AssistantBlockView key={block.key} block={block} isStreaming={isStreaming} />
       ))}
+      {isStreaming && <AssistantActivity parts={message.parts} />}
+      <SourceChips sources={sources} />
     </CitationSourcesContext.Provider>
   );
 }
@@ -80,8 +67,14 @@ function AssistantBlockView({
   switch (block.kind) {
     case "reasoning":
       return (
-        <Reasoning isStreaming={isStreaming && block.streaming} defaultOpen={false}>
-          <ReasoningTrigger />
+        <Reasoning
+          isStreaming={isStreaming && block.streaming}
+          defaultOpen={false}
+          className="mb-2"
+        >
+          <ReasoningTrigger className="w-auto gap-1">
+            <ReasoningLabel />
+          </ReasoningTrigger>
           <ReasoningContent>{block.text}</ReasoningContent>
         </Reasoning>
       );
@@ -94,6 +87,21 @@ function AssistantBlockView({
     case "refusal":
       return <RefusalNotice refusal={block.data} />;
   }
+}
+
+/**
+ * The reasoning line, as ChatGPT shows it: "Thinking…" while it streams, "Thought for N
+ * seconds" after (the vendored trigger's wording, without its icon — the same line as a tool's).
+ */
+function ReasoningLabel() {
+  const { isStreaming, isOpen, duration } = useReasoning();
+  const busy = isStreaming || duration === 0;
+  const text = busy
+    ? "Thinking…"
+    : duration === undefined
+      ? "Thought for a few seconds"
+      : `Thought for ${duration} seconds`;
+  return <DisclosureLabel text={text} busy={busy} open={isOpen} />;
 }
 
 function TextBlock({ text, isStreaming }: { text: string; isStreaming: boolean }) {

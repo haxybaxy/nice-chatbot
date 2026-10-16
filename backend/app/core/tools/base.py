@@ -97,6 +97,10 @@ class SourceRegistry:
     def get(self, source_id: int) -> Source | None:
         return next((source for source in self._order if source.id == source_id), None)
 
+    def find(self, url: str) -> Source | None:
+        """The source registered for ``url`` (same dedupe key as :meth:`add`), if any."""
+        return self._by_key.get(normalize_url(url))
+
     def all(self) -> list[Source]:
         return list(self._order)
 

@@ -8,7 +8,10 @@ import { ApiError } from "@/shared/services/api-error";
 
 import { ChatHeader } from "../components/chat-header";
 import { ChatThread } from "../components/chat-thread";
+import { ModelSelect } from "../components/model-select";
 import { NewChatScreen } from "../components/new-chat-screen";
+import { useChatModels } from "../hooks/use-chat-models";
+import { useComposerSettings } from "../hooks/use-composer-settings";
 import { useConversation } from "../hooks/use-conversations";
 import { conversationTitle } from "../utils/conversations";
 
@@ -21,13 +24,23 @@ export default function ChatPage() {
   return <ConversationView key={conversationId} teamId={teamId} conversationId={conversationId} />;
 }
 
+/**
+ * One conversation: the header with the model picker above the thread. The composer's choices
+ * live here because the picker is in the header and the thread sends with them.
+ */
 function ConversationView({ teamId, conversationId }: { teamId: string; conversationId: string }) {
   const query = useConversation(conversationId);
+  const models = useChatModels();
+  const [settings, updateSettings] = useComposerSettings();
+  const catalog = models.data ?? [];
+  const picker = (
+    <ModelSelect settings={settings} onSettingsChange={updateSettings} models={catalog} />
+  );
 
   if (query.isPending) {
     return (
       <>
-        <ChatHeader title="Conversation" />
+        <ChatHeader title="Conversation">{picker}</ChatHeader>
         <Loading fullHeight label="Loading conversation…" />
       </>
     );
@@ -36,7 +49,7 @@ function ConversationView({ teamId, conversationId }: { teamId: string; conversa
     const notFound = query.error instanceof ApiError && query.error.status === 404;
     return (
       <>
-        <ChatHeader title={notFound ? "Not found" : "Conversation"} />
+        <ChatHeader title={notFound ? "Not found" : "Conversation"}>{picker}</ChatHeader>
         <div className="mx-auto w-full max-w-md p-6">
           <Alert variant={notFound ? "default" : "destructive"}>
             <AlertDescription>
@@ -63,9 +76,15 @@ function ConversationView({ teamId, conversationId }: { teamId: string; conversa
 
   return (
     <>
-      <ChatHeader title={conversationTitle(query.data.conversation)} />
+      <ChatHeader title={conversationTitle(query.data.conversation)}>{picker}</ChatHeader>
       <div className="min-h-0 flex-1">
-        <ChatThread teamId={teamId} detail={query.data} />
+        <ChatThread
+          teamId={teamId}
+          detail={query.data}
+          settings={settings}
+          onSettingsChange={updateSettings}
+          models={catalog}
+        />
       </div>
     </>
   );

@@ -48,7 +48,17 @@ from app.users.models import UserModel
 from tests.core.research.test_graph import PLAN, lead_turns, worker_turns
 from tests.core.research.test_graph import RESULTS as RESEARCH_RESULTS
 from tests.fakes import FakeListener
-from tests.fakes_llm import OPUS, FakeChatModelFactory, FakeSearchClient, FakeTracer, ScriptedChatModel, scripted_turn
+from tests.fakes_llm import (
+    GPT,
+    NATIVE_CATALOG,
+    OPUS,
+    FakeChatModelFactory,
+    FakeSearchClient,
+    FakeTracer,
+    ScriptedChatModel,
+    scripted_openai_turn,
+    scripted_turn,
+)
 from tests.sample_files import PNG_1X1
 from tests.seeds import (
     seed_attachment,
@@ -180,7 +190,8 @@ class Harness:
     scope: SessionScope
     listener: FakeListener
     tracer: FakeTracer = field(default_factory=FakeTracer)
-    search: FakeSearchClient = field(default_factory=lambda: FakeSearchClient(results=RESULTS))
+    # `None`: a server without a search provider (the web tools cannot be offered).
+    search: FakeSearchClient | None = field(default_factory=lambda: FakeSearchClient(results=RESULTS))
     checkpointer: Checkpointer = field(default_factory=NullCheckpointer)
 
     def use_case(self, llm: FakeChatModelFactory) -> RunAssistantTurn:
@@ -340,6 +351,108 @@ class TestHappyPath:
 
 def _tool_results(model: ScriptedChatModel) -> list[ToolMessage]:
     return [message for message in model.calls[-1] if isinstance(message, ToolMessage)]
+
+
+class TestToolHonesty:
+    """What the prompt promises is what is bound: nothing when the server lacks the capability, the
+    provider's built-in search when the model has one."""
+
+    async def test_requested_tools_the_server_cannot_offer_are_declared_unavailable(
+        self,
+        db_session: AsyncSession,
+        test_scope: SessionScope,
+        fake_listener: FakeListener,
+        run: RunModel,
+    ) -> None:
+        harness = Harness(scope=test_scope, listener=fake_listener, search=None)
+        chat = ScriptedChatModel(turns=[scripted_turn("I cannot search in this conversation.")])
+
+        await harness.use_case(_factory(chat)).execute(run_id=run.id, worker_id=WORKER)
+
+        await db_session.refresh(run)
+        assert (run.status, run.step_count) == ("succeeded", 1)
+        message = await _message(db_session, run)
+        assert _part_types(message.parts) == ["step-start", "text"]
+        # The switch was on (`options.web_search`), but nothing was bound — and the prompt says so.
+        assert chat.bound_tools == []
+        system = str(chat.calls[0][0].content)
+        assert "Tools enabled in this conversation: none" in system
+        assert "Requested but unavailable here (say so if asked): web_fetch, web_search" in system
+        assert "Citations:" not in system
+
+    async def test_native_search_runs_inside_the_model_call_and_is_persisted(
+        self,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        test_scope: SessionScope,
+        fake_listener: FakeListener,
+        conversation: ConversationModel,
+        owner: UserModel,
+    ) -> None:
+        monkeypatch.setattr("app.chat.use_cases.run_assistant_turn.model_catalog", lambda: NATIVE_CATALOG)
+        run = await seed_run(
+            db_session,
+            conversation=conversation,
+            requested_by=owner,
+            status=RunStatus.RUNNING,
+            worker_id=WORKER,
+            heartbeat_at=datetime.now(UTC),
+            model=GPT.id,
+        )
+        harness = Harness(scope=test_scope, listener=fake_listener, search=None)
+        tracked = f"{DOCS_URL}?utm_source=chatgpt.com"
+        link = f"([What's new]({tracked}))"
+        answer = f"Python 3.14 adds t-strings {link}."
+        start = answer.index(link)
+        turn = scripted_openai_turn(
+            answer,
+            reasoning="Checking the release notes.",
+            searches=[("python 3.14", [tracked, PEP_URL])],
+            citations=[(tracked, "What's new in 3.14", start, start + len(link))],
+            input_tokens=100,
+            output_tokens=20,
+        )
+        chat = ScriptedChatModel(turns=[turn])
+
+        await harness.use_case(_factory(chat)).execute(run_id=run.id, worker_id=WORKER)
+
+        await db_session.refresh(run)
+        message = await _message(db_session, run)
+        events = await _events(db_session, run)
+        # One model step: the search happened inside it, no tool round.
+        assert (run.status, run.error, run.step_count) == ("succeeded", None, 1)
+        assert (run.input_tokens, run.output_tokens) == (100, 20)
+        assert events[-1] == {"type": "finish", "finishReason": "stop"}
+        assert message.parts == fold_parts(events)
+        assert _part_types(message.parts) == ["step-start", "reasoning", "tool-web_search", "text", "source-url"]
+        search = message.parts[2]
+        assert (search["state"], search["providerExecuted"], search["input"]) == (
+            "output-available",
+            True,
+            {"query": "python 3.14"},
+        )
+        assert str(search["toolCallId"]).startswith("ws_")
+        assert message.parts[4] == {
+            "type": "source-url",
+            "sourceId": "1",
+            "url": DOCS_URL,
+            "title": "What's new in 3.14",
+        }
+        assert message.parts[3]["text"] == answer  # the model's own link is the citation
+        assert (message.provider, message.model) == ("openai", GPT.id)
+        provider_messages = cast("list[dict[str, object]]", message.provider_messages)
+        assert [cast("list[str]", item["id"])[-1] for item in provider_messages] == ["AIMessage"]
+        stored = cast("dict[str, object]", provider_messages[0]["kwargs"])
+        assert "web_search_call" in {
+            str(block.get("type")) for block in cast("list[dict[str, object]]", stored["content"])
+        }
+        # The provider tool was bound, and the prompt described the built-in search.
+        assert chat.bound_tools == [["web_search"]]
+        system = str(chat.calls[0][0].content)
+        assert "Tools enabled in this conversation: web_search (built-in)" in system
+        assert "web_fetch" not in system.split("# This conversation")[1]
+        assert "Requested but unavailable" not in system
+        assert "Citations: built-in search" in system
 
 
 class TestCancel:

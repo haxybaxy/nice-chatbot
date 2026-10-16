@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Literal
 
-from app.core.config import LlmProvider, llm_settings, parse_model_id
+from app.core.config import LlmProvider, llm_settings, parse_model_id, sandbox_settings, search_settings
 from app.core.exceptions import AppError
 
 type Tier = Literal["frontier", "balanced", "fast"]
@@ -31,6 +31,11 @@ class ModelSpec:
     supports_reasoning: bool
     # Accepts image content blocks; without it attached images become a text placeholder.
     supports_vision: bool
+    # The provider searches the web itself (OpenAI's built-in tool through the Responses API).
+    native_web_search: bool
+    # What a run on this model can actually do on this server: search (built-in or Tavily), run code.
+    web_search: bool
+    code: bool
     # List prices (Anthropic first-party rates), None when unknown — cost estimates only.
     input_usd_per_mtok: float | None
     output_usd_per_mtok: float | None
@@ -86,8 +91,12 @@ class ModelCatalog:
         openai_supports_tools: bool,
         openai_supports_reasoning: bool,
         openai_supports_vision: bool,
+        openai_native_web_search: bool = False,
+        search_configured: bool = False,
+        sandbox_configured: bool = False,
     ) -> None:
         self._configured: dict[LlmProvider, bool] = {"anthropic": anthropic_configured, "openai": openai_configured}
+        openai_native = openai_native_web_search and openai_supports_tools
         parsed = [(full_id, *parse_model_id(full_id)) for full_id in model_ids]
         # The configured defaults apply only while their provider has credentials; otherwise the
         # first available model (and the first available fast one for titles) steps in, so a
@@ -113,6 +122,9 @@ class ModelCatalog:
                     supports_tools=True,
                     supports_reasoning=True,
                     supports_vision=True,
+                    native_web_search=False,
+                    web_search=search_configured,
+                    code=sandbox_configured,
                     input_usd_per_mtok=known.input_usd if known else None,
                     output_usd_per_mtok=known.output_usd if known else None,
                     cache_read_multiplier=known.cache_read_multiplier if known else 0.1,
@@ -128,6 +140,9 @@ class ModelCatalog:
                     supports_tools=openai_supports_tools,
                     supports_reasoning=openai_supports_reasoning,
                     supports_vision=openai_supports_vision,
+                    native_web_search=openai_native,
+                    web_search=openai_supports_tools and (openai_native or search_configured),
+                    code=openai_supports_tools and sandbox_configured,
                     input_usd_per_mtok=None,
                     output_usd_per_mtok=None,
                     cache_read_multiplier=1.0,
@@ -201,4 +216,7 @@ def model_catalog() -> ModelCatalog:
         openai_supports_tools=llm_settings.llm_openai_supports_tools,
         openai_supports_reasoning=llm_settings.llm_openai_supports_reasoning,
         openai_supports_vision=llm_settings.llm_openai_supports_vision,
+        openai_native_web_search=llm_settings.openai_native_web_search,
+        search_configured=search_settings.configured,
+        sandbox_configured=sandbox_settings.sandbox_backend != "disabled",
     )

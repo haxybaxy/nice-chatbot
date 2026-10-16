@@ -15,16 +15,27 @@ MODELS = [
 ]
 
 
-def _catalog(*, anthropic: bool = True, openai: bool = False) -> ModelCatalog:
+def _catalog(
+    *,
+    anthropic: bool = True,
+    openai: bool = False,
+    openai_tools: bool = False,
+    native_search: bool = False,
+    search: bool = False,
+    sandbox: bool = False,
+) -> ModelCatalog:
     return ModelCatalog(
         model_ids=MODELS,
         default_id="anthropic:claude-opus-5-5",
         title_id="anthropic:claude-haiku-5-5",
         anthropic_configured=anthropic,
         openai_configured=openai,
-        openai_supports_tools=False,
+        openai_supports_tools=openai_tools,
         openai_supports_reasoning=False,
         openai_supports_vision=False,
+        openai_native_web_search=native_search,
+        search_configured=search,
+        sandbox_configured=sandbox,
     )
 
 
@@ -97,3 +108,28 @@ class TestCatalog:
 
     def test_process_catalog_follows_the_test_environment(self) -> None:
         assert [spec.id for spec in model_catalog().available()] == MODELS[:3]
+
+
+class TestCapabilities:
+    """What a run on each model can do here: built-in search (OpenAI), Tavily search, the sandbox."""
+
+    def test_openai_models_search_natively_when_the_flag_and_tools_are_on(self) -> None:
+        gpt = _catalog(openai=True, openai_tools=True, native_search=True).get("openai:gpt-5.4-mini")
+        assert (gpt.native_web_search, gpt.web_search, gpt.code) == (True, True, False)
+        opus = _catalog(openai=True, openai_tools=True, native_search=True).get("anthropic:claude-opus-5-5")
+        assert (opus.native_web_search, opus.web_search, opus.code) == (False, False, False)
+
+    def test_tavily_and_the_sandbox_cover_every_tool_capable_model(self) -> None:
+        catalog = _catalog(openai=True, openai_tools=True, search=True, sandbox=True)
+        for model_id in ("anthropic:claude-opus-5-5", "openai:gpt-5.4-mini"):
+            spec = catalog.get(model_id)
+            assert (spec.native_web_search, spec.web_search, spec.code) == (False, True, True)
+
+    def test_models_without_tool_support_get_nothing(self) -> None:
+        llama = _catalog(openai=True, native_search=True, search=True, sandbox=True).get("openai:llama3.3")
+        assert (llama.supports_tools, llama.native_web_search, llama.web_search, llama.code) == (
+            False,
+            False,
+            False,
+            False,
+        )

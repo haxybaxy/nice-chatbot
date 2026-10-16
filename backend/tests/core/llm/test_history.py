@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.core.config import attachment_settings
 from app.core.llm.attachments import StoredAttachment
 from app.core.llm.history import NOT_EXECUTED, StoredMessage, dump_turn, text_of_parts, to_langchain
-from tests.fakes_llm import LOCAL, OPUS, SONNET, scripted_turn
+from tests.fakes_llm import GPT, LOCAL, OPUS, SONNET, scripted_openai_turn, scripted_turn
 from tests.sample_files import PNG_1X1
 
 
@@ -162,6 +162,53 @@ class TestCrossProvider:
         restored = to_langchain([row], target=OPUS)
         assert isinstance(restored[0], AIMessage)
         assert restored[0].content == "plain"
+
+
+class TestProviderExecuted:
+    """A built-in search lives inside the model's message: replayed verbatim to OpenAI minus the fields
+    the API only ever returns, and skipped by the neutral rebuild (its text carries the citations)."""
+
+    def test_openai_replay_strips_the_consulted_pages_but_keeps_the_search_and_citations(self) -> None:
+        turn = scripted_openai_turn(
+            "Answer ([Docs](https://d.x/?utm_source=chatgpt.com)).",
+            searches=[("q", ["https://d.x/", "https://e.x/"])],
+            citations=[("https://d.x/?utm_source=chatgpt.com", "Docs", 7, 52)],
+        )
+        row = StoredMessage(
+            role="assistant", parts=[], provider="openai", model=GPT.id, provider_messages=dump_turn([turn])
+        )
+        [replayed] = to_langchain([_user("q"), row], GPT)[1:]
+        assert isinstance(replayed, AIMessage)
+        blocks = cast("list[dict[str, object]]", replayed.content)
+        search = next(block for block in blocks if block.get("type") == "web_search_call")
+        assert search["action"] == {"type": "search", "queries": ["q"], "query": "q"}
+        text = next(block for block in blocks if block.get("type") == "text")
+        assert cast("list[dict[str, object]]", text["annotations"])[0]["url"] == "https://d.x/?utm_source=chatgpt.com"
+        # The stored row is untouched.
+        stored = cast("dict[str, object]", cast("list[dict[str, object]]", row.provider_messages)[0]["kwargs"])
+        stored_blocks = cast("list[dict[str, object]]", stored["content"])
+        assert "sources" in cast("dict[str, object]", stored_blocks[0]["action"])
+
+    def test_the_neutral_rebuild_skips_provider_executed_tool_parts(self) -> None:
+        parts: list[dict[str, object]] = [
+            {"type": "step-start"},
+            {
+                "type": "tool-web_search",
+                "toolCallId": "ws_1",
+                "state": "output-available",
+                "input": {"query": "q"},
+                "output": {"query": "q", "results": []},
+                "providerExecuted": True,
+            },
+            {"type": "text", "text": "Answer [1].", "state": "done"},
+            {"type": "source-url", "sourceId": "1", "url": "https://d.x/"},
+        ]
+        row = StoredMessage(role="assistant", parts=parts, provider="openai", model=GPT.id, provider_messages=None)
+        messages = to_langchain([_user("q"), row], OPUS)
+        assert [type(message).__name__ for message in messages] == ["HumanMessage", "AIMessage"]
+        answer = messages[1]
+        assert isinstance(answer, AIMessage)
+        assert (answer.content, answer.tool_calls) == ("Answer [1].", [])
 
 
 class TestUserRows:

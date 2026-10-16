@@ -1,4 +1,4 @@
-import { MessageSquareIcon, MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -28,7 +28,10 @@ interface ConversationListItemProps {
   isActive: boolean;
 }
 
-/** One sidebar row: a link to the conversation (spinner while a run is active) and its Rename / Delete menu. */
+/**
+ * One sidebar row, title only like ChatGPT's (a spinner in front while a response is being
+ * produced), and its Rename / Delete menu on hover.
+ */
 export function ConversationListItem({ conversation, isActive }: ConversationListItemProps) {
   const [dialog, setDialog] = useState<ItemDialog>(null);
   const title = conversationTitle(conversation);
@@ -40,11 +43,7 @@ export function ConversationListItem({ conversation, isActive }: ConversationLis
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isActive} tooltip={title}>
         <Link to={ROUTES.app.conversation(conversation.teamId, conversation.id)}>
-          {conversation.activeRun ? (
-            <Spinner aria-label="Response in progress" />
-          ) : (
-            <MessageSquareIcon />
-          )}
+          {conversation.activeRun && <Spinner aria-label="Response in progress" />}
           <span className="truncate">{title}</span>
         </Link>
       </SidebarMenuButton>

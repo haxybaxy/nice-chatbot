@@ -55,13 +55,32 @@ raw consumers and tests.
 
 ## Tools and citations
 
-`web_search` / `web_fetch` (Tavily behind `SearchClient`) and `run_code` (a throwaway Docker
-container behind `SandboxClient`) are LangChain tools built per run with the run's context
-(cancel token, source registry, budgets, tracer). Every source gets a run-wide number; tool
-results label them `[n]`, the system prompt mandates `[n]` citations, and each new source is
-streamed once as a `source-url` part. Deep research is a mode: a planner, parallel subagents on
-the cheaper sibling model, a synthesized report with `[n]` and a confidence & gaps section, and
-a citation check, all reported through `data-research-*` parts.
+`ToolRegistry.for_run` resolves the names a run asked for (`options.web_search` → `web_search` +
+`web_fetch`, `options.code` → `run_code`) into a `RunTools`: the LangChain tools the graph's
+`ToolNode` runs, the provider-executed tools bound next to them, and — for the system prompt — the
+names actually bound and those requested but unavailable on this server. The prompt never promises
+a tool the model does not have; the model picker (`ModelOut.webSearch` / `.code`) tells the
+composer what to offer.
+
+Web search has two engines. On api.openai.com the `openai:*` models run on the Responses API
+(stateless: `store=false`, encrypted reasoning replayed) and search with OpenAI's built-in
+`web_search` — the provider tool `{"type": "web_search"}` bound alongside the function tools. The
+search happens inside the model call: its `web_search_call` blocks (queries, pages consulted, pages
+opened) become `tool-web_search` / `tool-web_fetch` parts marked `providerExecuted`, and the
+`url_citation` annotations on the text become run-numbered `source-url` parts (`utm_*` stripped),
+with a ` [n]` marker appended only where the cited span is not already the model's own inline link
+— the UI renders a link to a known source as a citation pill either way. Provider-executed parts
+are never replayed as tool calls to another provider. Everywhere else (Claude, local servers)
+`web_search` / `web_fetch` are the Tavily tools behind `SearchClient`, whose results are numbered
+`[n]` in the tool output and cited as such. `LLM_OPENAI_WEB_SEARCH=false` forces the Tavily engine
+for OpenAI models too.
+
+`run_code` is a throwaway Docker container behind `SandboxClient` (`SANDBOX_BACKEND=docker`). All
+tools are built per run with the run's context (cancel token, source registry, budgets, tracer);
+every source gets a run-wide number and is streamed once as a `source-url` part. Deep research is a
+mode: a planner, parallel subagents on the cheaper sibling model (searching natively when it can),
+a synthesized report with `[n]` and a confidence & gaps section, and a citation check, all reported
+through `data-research-*` parts.
 
 ## Attachments
 

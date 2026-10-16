@@ -7,17 +7,22 @@ import {
   PromptInputBody,
   PromptInputFooter,
   PromptInputHeader,
-  PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
 } from "@/shared/components/ai-elements/prompt-input";
+import { cn } from "@/shared/utils";
 
 import { AttachFilesButton } from "./attach-files-button";
 import { ComposerAttachments } from "./composer-attachments";
 import { ComposerModeButtons } from "./composer-mode-buttons";
-import { ModelSelect } from "./model-select";
-import { useComposerAttachments, useComposerFileEvents } from "../hooks/use-composer-attachments";
-import { type ComposerSettings, resolveModelId } from "../hooks/use-composer-settings";
+import { ComposerSubmitButton } from "./composer-submit-button";
+import {
+  type PendingAttachment,
+  useComposerAttachments,
+  useComposerFileEvents,
+} from "../hooks/use-composer-attachments";
+import { useComposerFocus } from "../hooks/use-composer-focus";
+import { type ComposerSettings, resolveModel } from "../hooks/use-composer-settings";
 import { usePendingUploads } from "../hooks/use-pending-uploads";
 import type { ChatModel, ComposerSubmission } from "../types";
 import { ATTACHMENT_MAX_FILES, isImageMediaType } from "../utils/attachments";
@@ -36,17 +41,38 @@ interface ChatComposerProps {
   settings: ComposerSettings;
   onSettingsChange: (patch: Partial<ComposerSettings>) => void;
   models: readonly ChatModel[];
-  placeholder?: string;
 }
+
+/**
+ * ChatGPT's pill around the vendored `InputGroup` (`PromptInput` renders it as the form's only
+ * child): the radius, the surface, a soft shadow in light mode and no focus ring. Styled from
+ * the outside so `prompt-input.tsx` / `input-group.tsx` stay as shipped — a child selector
+ * (`.form > [data-slot=input-group]`) out-specifies the group's own utilities, and adding the
+ * group's `:has(…:focus-visible)` condition out-specifies its focus ring too.
+ */
+const COMPOSER_SHELL = cn(
+  "[&>[data-slot=input-group]]:rounded-[28px] [&>[data-slot=input-group]]:border-border [&>[data-slot=input-group]]:bg-background [&>[data-slot=input-group]]:shadow-[0_2px_12px_rgba(0,0,0,0.06)]",
+  "dark:[&>[data-slot=input-group]]:border-transparent dark:[&>[data-slot=input-group]]:bg-card dark:[&>[data-slot=input-group]]:shadow-none",
+  "[&>[data-slot=input-group]:has([data-slot=input-group-control]:focus-visible)]:border-border [&>[data-slot=input-group]:has([data-slot=input-group-control]:focus-visible)]:ring-0",
+  "dark:[&>[data-slot=input-group]:has([data-slot=input-group-control]:focus-visible)]:border-transparent"
+);
 
 const reportRejectedFile = (message: string) => toast.error(message);
 
+/** An image is attached but the model cannot see: the attachment strip says so. */
+function needsVisionHint(model: ChatModel | undefined, files: readonly PendingAttachment[]) {
+  return (
+    model?.supportsVision === false && files.some((entry) => isImageMediaType(entry.file.type))
+  );
+}
+
 /**
- * The prompt box: textarea + attachments (paperclip, drop, paste), model select, Chat / Deep
- * research mode, the Search and Code toggles (Chat mode only) and a submit button that turns
+ * The prompt box, laid out like ChatGPT's: the textarea on top; under it the `+` for files,
+ * the Search / Code / Deep research pills and, on the right, the round send button that turns
  * into Stop while a response runs. Submitting needs a `ready` thread, no upload in flight and
  * some text or at least one file; the files are uploaded first (`usePendingUploads`), then
- * `onSubmit` gets the text and the uploads as SDK file parts.
+ * `onSubmit` gets the text and the uploads as SDK file parts. The textarea keeps the focus
+ * through a send or a stop (`useComposerFocus`).
  *
  * The pending files are the composer's own state (`useComposerAttachments`), not the vendored
  * `PromptInput`'s: its list hands `onSubmit` data/blob URLs, and a multipart upload needs the
@@ -61,20 +87,17 @@ export function ChatComposer({
   settings,
   onSettingsChange,
   models,
-  placeholder = "Message the assistant…",
 }: ChatComposerProps) {
   const [text, setText] = useState("");
+  const { textareaRef, focus } = useComposerFocus();
   const attachments = useComposerAttachments(reportRejectedFile);
   const { uploadAll, isUploading } = usePendingUploads(teamId);
   const fileEvents = useComposerFileEvents(attachments, isUploading);
 
-  const isGenerating = status === "submitted" || status === "streaming";
   const hasContent = text.trim().length > 0 || attachments.files.length > 0;
   const canSubmit = status === "ready" && !isUploading && hasContent;
-  const modelId = resolveModelId(settings, models);
-  const showVisionHint =
-    models.find((entry) => entry.id === modelId)?.supportsVision === false &&
-    attachments.files.some((entry) => isImageMediaType(entry.file.type));
+  const model = resolveModel(settings, models);
+  const showVisionHint = needsVisionHint(model, attachments.files);
 
   const submit = async () => {
     if (!canSubmit) {
@@ -84,16 +107,23 @@ export function ChatComposer({
     await onSubmit({ text: text.trim(), files });
     setText("");
     attachments.clear();
+    focus();
+  };
+
+  const stop = () => {
+    onStop();
+    focus();
   };
 
   return (
     <PromptInput
+      className={COMPOSER_SHELL}
       onSubmit={submit}
       onDragOverCapture={fileEvents.onDragOverCapture}
       onDropCapture={fileEvents.onDropCapture}
     >
       {attachments.files.length > 0 && (
-        <PromptInputHeader>
+        <PromptInputHeader className="px-4 pt-3 pb-0">
           <ComposerAttachments
             files={attachments.files}
             onRemove={attachments.remove}
@@ -104,32 +134,29 @@ export function ChatComposer({
       )}
       <PromptInputBody>
         <PromptInputTextarea
+          ref={textareaRef}
           aria-label="Message"
-          placeholder={placeholder}
+          placeholder="Ask anything"
+          className="max-h-72 min-h-12 px-4 pt-3.5 pb-2 text-base leading-6 md:text-base"
           value={text}
           onChange={(event) => setText(event.currentTarget.value)}
           onPaste={fileEvents.onPaste}
           onKeyDown={fileEvents.onKeyDown}
         />
       </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
+      <PromptInputFooter className="px-3 pt-1 pb-3">
+        <PromptInputTools className="gap-1.5">
           <AttachFilesButton
             disabled={isUploading || attachments.files.length >= ATTACHMENT_MAX_FILES}
             onFiles={attachments.add}
           />
-          <ModelSelect
-            models={models}
-            value={modelId}
-            onChange={(model) => onSettingsChange({ model })}
+          <ComposerModeButtons
+            settings={settings}
+            onSettingsChange={onSettingsChange}
+            model={model}
           />
-          <ComposerModeButtons settings={settings} onSettingsChange={onSettingsChange} />
         </PromptInputTools>
-        <PromptInputSubmit
-          status={status}
-          onStop={onStop}
-          disabled={isGenerating ? false : !canSubmit}
-        />
+        <ComposerSubmitButton status={status} canSubmit={canSubmit} onStop={stop} />
       </PromptInputFooter>
     </PromptInput>
   );

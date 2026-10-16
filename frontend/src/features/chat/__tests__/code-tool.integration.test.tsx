@@ -40,7 +40,7 @@ describe("the code tool", () => {
     renderWithProviders(<App />, { route: THREAD_ROUTE });
     await sendWithCode(user, "What is 17*23? Use code.");
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]?.tools).toEqual({ webSearch: false, code: true });
+    expect(bodies[0]?.tools).toEqual({ webSearch: true, code: true });
 
     // start, start-step, tool-input-start, tool-input-available → running
     chunks.slice(0, 4).forEach((chunk) => events.push(chunk));

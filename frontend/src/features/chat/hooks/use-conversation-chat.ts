@@ -13,7 +13,6 @@ import type {
   ChatMessage,
   ComposerSubmission,
   ConversationDetail,
-  Run,
   RunRequestOptions,
 } from "../types";
 import { toChatMessage } from "../utils/wire-parts";
@@ -42,17 +41,11 @@ export function useConversationChat({ teamId, detail, getRunOptions }: UseConver
   // flip `resume` or feed new initial messages into a thread that is already live.
   const [initialMessages] = useState(() => detail.messages.map(toChatMessage));
   const [resume] = useState(detail.conversation.activeRun != null);
-  const [activeRun, setActiveRun] = useState<Run | null>(detail.conversation.activeRun ?? null);
 
   // One transport per conversation: it owns the socket, so it is created once and its
   // callbacks are refreshed through `update()` below rather than by recreating it.
   const transport = useMemo(
-    () =>
-      new ConversationRunTransport({
-        conversationId,
-        getRunOptions: () => ({}),
-        onRunChange: setActiveRun,
-      }),
+    () => new ConversationRunTransport({ conversationId, getRunOptions: () => ({}) }),
     [conversationId]
   );
   useEffect(() => () => transport.close(), [transport]);
@@ -140,12 +133,9 @@ export function useConversationChat({ teamId, detail, getRunOptions }: UseConver
 
   return {
     messages: chat.messages,
+    /** `submitted` while a response is awaited — including the reconnect of a resumed run. */
     status: chat.status,
     error: chat.error,
-    /** The run being streamed, if any; set from mount when the conversation had one. */
-    activeRun,
-    /** Whether this mount picked up a run that was already in progress. */
-    resumed: resume,
     send,
     stop,
     reconnect,

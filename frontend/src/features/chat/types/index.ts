@@ -70,12 +70,18 @@ export type WireDataPart = Extract<WirePart, { data: unknown }>;
 // untouched), so only the fields the UI renders are named; outputs are the backend's
 // `*Out` schemas dumped by alias (camelCase).
 
+/** `web_search`'s arguments; a built-in search joins several queries with ` | `. */
 export type WebSearchInput = Narrows<WireToolPart["input"], { query: string }>;
+/**
+ * One hit. The Tavily tool fills every field and numbers the hit (`sourceId`); a built-in
+ * search (`providerExecuted`) only knows the pages it consulted — `url` alone, `title: null`,
+ * `snippet: ""` — and cites through `source-url` parts instead.
+ */
 export interface WebSearchResult {
-  sourceId: string;
-  title: string;
   url: string;
-  snippet: string;
+  title?: string | null;
+  snippet?: string;
+  sourceId?: string | null;
   publishedAt?: string | null;
   score?: number | null;
 }
@@ -84,11 +90,13 @@ export type WebSearchOutput = Narrows<
   { query: string; results: WebSearchResult[] }
 >;
 
+/** `web_fetch`'s arguments (`{ url, query }` for a built-in find-in-page). */
 export type WebFetchInput = Narrows<WireToolPart["input"], { url: string }>;
+/** The page; a built-in fetch reports it with `sourceId: null`, no title and empty content. */
 export type WebFetchOutput = Narrows<
   WireToolPart["output"],
   {
-    sourceId: string;
+    sourceId?: string | null;
     url: string;
     title?: string | null;
     content: string;

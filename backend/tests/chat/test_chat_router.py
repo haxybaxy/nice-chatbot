@@ -922,6 +922,8 @@ class TestListModels:
             "supportsTools": True,
             "supportsReasoning": True,
             "supportsVision": True,
+            "webSearch": True,  # tests/conftest.py sets a Tavily key; the sandbox stays disabled
+            "code": False,
             "isDefault": True,
         }
 

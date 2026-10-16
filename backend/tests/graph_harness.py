@@ -22,7 +22,7 @@ from app.core.agent.state import AgentLimits
 from app.core.agent.stream import DEFAULT_STREAMED_NODES, RunFinished, StepCompleted, UIChunkEvent, map_graph_stream
 from app.core.llm.chat_models import BuiltModel
 from app.core.tools.base import RunContext
-from app.core.tools.registry import ToolRegistry, default_tool_registry
+from app.core.tools.registry import RunTools, ToolRegistry, default_tool_registry
 from app.core.ui_stream import UIChunk
 from tests.fakes_llm import OPUS, FakeChatModelFactory, ScriptedChatModel
 
@@ -56,12 +56,20 @@ def scripted_model(turns: Sequence[AIMessage], *, purpose: str = "chat") -> tupl
     return model, built
 
 
-def tools_for(ctx: RunContext, names: Collection[str], registry: ToolRegistry | None = None) -> list[BaseTool]:
+def tools_for(ctx: RunContext, names: Collection[str], registry: ToolRegistry | None = None) -> RunTools:
     return (registry or default_tool_registry()).for_run(ctx, names=names, spec=OPUS)
 
 
-def chat_graph(built: BuiltModel, tools: Sequence[BaseTool], limits: AgentLimits | None = None) -> AgentGraph:
-    return build_agent_graph(built, tools, limits or AgentLimits(), checkpointer=None, name="chat")
+def run_tools(tools: Sequence[BaseTool]) -> RunTools:
+    """Plain LangChain tools as a run's tool set (what `for_run` returns for client tools only)."""
+    return RunTools(client=tuple(tools), names=tuple(sorted(tool.name for tool in tools)))
+
+
+def chat_graph(
+    built: BuiltModel, tools: RunTools | Sequence[BaseTool], limits: AgentLimits | None = None
+) -> AgentGraph:
+    resolved = tools if isinstance(tools, RunTools) else run_tools(tools)
+    return build_agent_graph(built, resolved, limits or AgentLimits(), checkpointer=None, name="chat")
 
 
 def prompt(text: str = "hi") -> list[BaseMessage]:

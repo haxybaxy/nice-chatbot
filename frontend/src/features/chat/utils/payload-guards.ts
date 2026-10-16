@@ -29,6 +29,12 @@ function isRecord(value: unknown): value is Probe {
 const hasString = (record: Probe, key: string) => typeof record[key] === "string";
 const hasNumber = (record: Probe, key: string) => typeof record[key] === "number";
 const hasBoolean = (record: Probe, key: string) => typeof record[key] === "boolean";
+/** `key?: string` — absent or a string. */
+const hasOptionalString = (record: Probe, key: string) =>
+  record[key] === undefined || hasString(record, key);
+/** `key?: string | null` — absent, `null` or a string. */
+const hasNullableString = (record: Probe, key: string) =>
+  record[key] === null || hasOptionalString(record, key);
 
 const TASK_STATUSES: readonly ResearchTaskStatus[] = [
   "pending",
@@ -46,13 +52,14 @@ export function isWebSearchInput(value: unknown): value is WebSearchInput {
   return isRecord(value) && hasString(value, "query");
 }
 
+/** Only `url` is certain: a built-in search reports the pages it consulted and nothing else. */
 function isWebSearchResult(value: unknown): value is WebSearchResult {
   return (
     isRecord(value) &&
-    hasString(value, "sourceId") &&
-    hasString(value, "title") &&
     hasString(value, "url") &&
-    hasString(value, "snippet")
+    hasNullableString(value, "title") &&
+    hasOptionalString(value, "snippet") &&
+    hasNullableString(value, "sourceId")
   );
 }
 
@@ -72,7 +79,7 @@ export function isWebFetchInput(value: unknown): value is WebFetchInput {
 export function isWebFetchOutput(value: unknown): value is WebFetchOutput {
   return (
     isRecord(value) &&
-    hasString(value, "sourceId") &&
+    hasNullableString(value, "sourceId") &&
     hasString(value, "url") &&
     hasString(value, "content") &&
     hasNumber(value, "chars") &&

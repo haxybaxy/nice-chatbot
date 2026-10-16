@@ -267,6 +267,9 @@ class LlmSettings(BaseSettings):
     llm_openai_parallel_tool_calls: bool = True
     # vLLM/Ollama accept `max_tokens`; api.openai.com wants `max_completion_tokens`.
     llm_openai_max_tokens_param: Literal["max_completion_tokens", "max_tokens"] = "max_completion_tokens"
+    # OpenAI's built-in web search (the model searches server-side, ChatGPT-style). Only effective
+    # against api.openai.com (the Responses API); turn it off to force the Tavily tools instead.
+    llm_openai_web_search: bool = True
 
     @field_validator("anthropic_api_key", "anthropic_base_url", "openai_api_key", mode="before")
     @classmethod
@@ -312,6 +315,16 @@ class LlmSettings(BaseSettings):
     def openai_configured(self) -> bool:
         """OpenAI itself needs the key; another OpenAI-compatible server is usable as soon as it is named."""
         return self.openai_api_key is not None or self.openai_base_url != OPENAI_DEFAULT_BASE_URL
+
+    @property
+    def openai_responses_api(self) -> bool:
+        """api.openai.com speaks the Responses API (built-in tools); other servers get Chat Completions."""
+        return self.openai_base_url == OPENAI_DEFAULT_BASE_URL
+
+    @property
+    def openai_native_web_search(self) -> bool:
+        """Whether ``openai:*`` models search through OpenAI's built-in tool."""
+        return self.llm_openai_web_search and self.llm_openai_supports_tools and self.openai_responses_api
 
 
 class AgentSettings(BaseSettings):

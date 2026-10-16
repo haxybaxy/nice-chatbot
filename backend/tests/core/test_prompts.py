@@ -27,6 +27,8 @@ def _message(
     user: str | None = "Ada",
     today: date = date(2026, 10, 14),
     tools: Collection[str] = ("web_search", "web_fetch"),
+    unavailable: Collection[str] = (),
+    native: bool = False,
 ) -> SystemMessage:
     return chat_system_message(
         model,
@@ -35,7 +37,13 @@ def _message(
         user_display_name=user,
         today=today,
         enabled_tools=tools,
+        unavailable_tools=unavailable,
+        native_web_search=native,
     )
+
+
+def _suffix(message: SystemMessage) -> str:
+    return str(cast("list[dict[str, object]]", message.content)[1]["text"])
 
 
 class TestStablePrefix:
@@ -52,6 +60,7 @@ class TestStablePrefix:
             _message(),
             _message(user=None, today=date(2027, 1, 1), tools=set()),
             _message(workspace="Other", tools={"run_code"}),
+            _message(tools={"web_search"}, native=True, unavailable={"run_code"}),
         ]
         prefixes = {cast("list[dict[str, object]]", variant.content)[0]["text"] for variant in variants}
         assert prefixes == {STABLE_PREFIX}
@@ -67,9 +76,22 @@ class TestStablePrefix:
         assert "Workspace (team): Platform team" in suffix
         assert "Tools enabled in this conversation: web_fetch, web_search" in suffix
         assert "Product: Nice Chatbot" in suffix
-        anonymous = str(cast("list[dict[str, object]]", _message(user=None, tools=()).content)[1]["text"])
+        assert "Citations: numbered sources" in suffix
+        anonymous = _suffix(_message(user=None, tools=()))
         assert "You are talking with: a team member" in anonymous
         assert "Tools enabled in this conversation: none" in anonymous
+        assert "Citations" not in anonymous
+        assert "unavailable" not in anonymous
+
+    def test_suffix_names_the_built_in_search_and_what_is_unavailable(self) -> None:
+        native = _suffix(_message(tools={"web_search"}, native=True, unavailable={"run_code"}))
+        assert "Tools enabled in this conversation: web_search (built-in)" in native
+        assert "Requested but unavailable here (say so if asked): run_code" in native
+        assert "Citations: built-in search" in native
+        assert "never write bracketed numbers yourself" in native
+        nothing = _suffix(_message(tools=(), unavailable={"web_fetch", "web_search"}))
+        assert "Tools enabled in this conversation: none" in nothing
+        assert "Requested but unavailable here (say so if asked): web_fetch, web_search" in nothing
 
     def test_text_format_is_one_string_starting_with_the_prefix(self) -> None:
         message = _message(model=TEXT)

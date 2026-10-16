@@ -1,4 +1,4 @@
-import { PaperclipIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useRef } from "react";
 
 import { PromptInputButton } from "@/shared/components/ai-elements/prompt-input";
@@ -10,7 +10,7 @@ interface AttachFilesButtonProps {
   onFiles: (files: Iterable<File>) => void;
 }
 
-/** The paperclip and the hidden picker behind it (`accept` = every allowed type and extension). */
+/** ChatGPT's round `+` and the hidden picker behind it (`accept` = every allowed type and extension). */
 export function AttachFilesButton({ disabled, onFiles }: AttachFilesButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -33,9 +33,10 @@ export function AttachFilesButton({ disabled, onFiles }: AttachFilesButtonProps)
         aria-label="Attach files"
         title="Attach files"
         disabled={disabled}
+        className="size-9 rounded-full"
         onClick={() => inputRef.current?.click()}
       >
-        <PaperclipIcon />
+        <PlusIcon className="size-5" />
       </PromptInputButton>
     </>
   );

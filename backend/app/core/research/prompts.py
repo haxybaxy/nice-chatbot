@@ -154,13 +154,22 @@ def retry_plan_message() -> HumanMessage:
     return HumanMessage(content="That was not valid JSON for the schema. Reply with the JSON object only.")
 
 
-def subagent_messages(task: ResearchTask, question: str) -> list[BaseMessage]:
+NATIVE_SEARCH_NOTE = """\
+
+Your web_search is built into the model: it reads the pages it finds itself, so there is no \
+web_fetch and results are not numbered. Cite each finding with an inline link to the page it comes \
+from; the numbers in the report format are filled in for you from those links.
+"""
+
+
+def subagent_messages(task: ResearchTask, question: str, *, native_search: bool = False) -> list[BaseMessage]:
     brief = (
         f"Overall question: {question}\n\n"
         f"Your objective ({task.title}):\n{task.objective}\n\n"
         f"Budget: at most {task.max_tool_calls} tool calls."
     )
-    return [SystemMessage(content=SUBAGENT_SYSTEM), HumanMessage(content=brief)]
+    system = SUBAGENT_SYSTEM + NATIVE_SEARCH_NOTE if native_search else SUBAGENT_SYSTEM
+    return [SystemMessage(content=system), HumanMessage(content=brief)]
 
 
 def _sources_block(sources: Sequence[Source]) -> str:

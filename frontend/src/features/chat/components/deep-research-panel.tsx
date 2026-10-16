@@ -100,7 +100,7 @@ export function DeepResearchPanel({
     <Plan
       isStreaming={isStreaming && !settled}
       defaultOpen
-      className="mb-4"
+      className="mb-2"
       data-testid="deep-research"
     >
       <PlanHeader>

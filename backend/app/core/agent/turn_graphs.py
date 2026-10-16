@@ -41,7 +41,7 @@ from app.core.research.graph import (
 from app.core.research.prompts import CITATION_SCHEMA, PLAN_SCHEMA
 from app.core.research.types import ResearchBudget
 from app.core.tools.base import RunContext
-from app.core.tools.registry import ToolRegistry
+from app.core.tools.registry import RunTools, ToolRegistry
 
 CHAT_RUN_NAME = "chat"
 RESEARCH_RUN_NAME = "deep_research"
@@ -72,8 +72,13 @@ class TurnPrompt:
     workspace_name: str
     user_display_name: str | None
     today: date
-    enabled_tools: Collection[str]
+    # The tool names the run's options switch on; what is actually bound is resolved per mode.
+    requested_tools: Collection[str]
     history: Sequence[StoredMessage]
+
+
+# Deep research always searches: its subagents get the web tools whatever the switches say.
+RESEARCH_TOOLS: frozenset[str] = frozenset({"web_search", "web_fetch"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,14 +97,17 @@ async def _resumes(setup: TurnSetup, graph: AgentGraph | ResearchGraph, config: 
     return snapshot.created_at is not None
 
 
-def _system_prompt(model: BuiltModel, prompt: TurnPrompt) -> SystemMessage:
+def _system_prompt(model: BuiltModel, prompt: TurnPrompt, tools: RunTools) -> SystemMessage:
+    """The prompt describes the tools that are bound, never the ones merely asked for."""
     return chat_system_message(
         model,
         product_name=prompt.product_name,
         workspace_name=prompt.workspace_name,
         user_display_name=prompt.user_display_name,
         today=prompt.today,
-        enabled_tools=prompt.enabled_tools,
+        enabled_tools=tools.names,
+        unavailable_tools=tools.unavailable,
+        native_web_search=tools.native_web_search,
     )
 
 
@@ -139,13 +147,13 @@ def _research_models(
 async def chat_turn(setup: TurnSetup, prompt: TurnPrompt) -> TurnStream:
     """The chat loop: the run's model with the enabled tools, resumed or fed the system prompt + history."""
     built = setup.llm.build(setup.spec, effort=setup.effort, purpose="chat", user_id=setup.ctx.user_id)
-    tools = setup.tools.for_run(setup.ctx, names=prompt.enabled_tools, spec=setup.spec)
+    tools = setup.tools.for_run(setup.ctx, names=prompt.requested_tools, spec=setup.spec)
     graph = build_agent_graph(built, tools, setup.limits, checkpointer=setup.saver, name=CHAT_RUN_NAME)
     config = _config(setup, CHAT_RUN_NAME)
     resumed = await _resumes(setup, graph, config)
     graph_input = None
     if not resumed:
-        graph_input = agent_input([_system_prompt(built, prompt), *to_langchain(prompt.history, setup.spec)])
+        graph_input = agent_input([_system_prompt(built, prompt, tools), *to_langchain(prompt.history, setup.spec)])
     events = map_graph_stream(stream_agent(graph, graph_input, config, ctx=setup.ctx), ctx=setup.ctx)
     return TurnStream(events=events, timeout_s=chat_settings.chat_run_timeout_s, resumed=resumed)
 
@@ -168,7 +176,9 @@ async def research_turn(setup: TurnSetup, prompt: TurnPrompt, *, question: str) 
     resumed = await _resumes(setup, graph, config)
     graph_input = None
     if not resumed:
-        messages = [_system_prompt(lead, prompt), *to_langchain(prompt.history, setup.spec)]
+        # The subagents do the searching, on the cheaper sibling: describe what they can do.
+        tools = setup.tools.for_run(setup.ctx, names=RESEARCH_TOOLS | set(prompt.requested_tools), spec=worker.spec)
+        messages = [_system_prompt(lead, prompt, tools), *to_langchain(prompt.history, setup.spec)]
         graph_input = research_input(messages, question)
     events = map_graph_stream(
         stream_research(graph, graph_input, config, ctx=setup.ctx),

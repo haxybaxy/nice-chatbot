@@ -10,6 +10,7 @@ from app.core.agent.checkpointer import NullCheckpointer, PostgresCheckpointer, 
 from app.core.agent.graph import build_agent_graph, run_config
 from app.core.agent.state import AgentLimits
 from app.core.exceptions import AppError
+from app.core.tools.registry import RunTools
 from app.db.config import db_settings
 from tests.fakes_llm import make_run_context, scripted_turn
 from tests.graph_harness import collect, prompt, scripted_model
@@ -25,7 +26,7 @@ async def test_checkpoints_land_in_their_own_schema_and_threads_can_be_deleted(e
         assert checkpointer.saver is not None
         ctx = make_run_context()
         _, built = scripted_model([scripted_turn("hello")])
-        graph = build_agent_graph(built, [], AgentLimits(), checkpointer=checkpointer.saver, name="chat")
+        graph = build_agent_graph(built, RunTools(), AgentLimits(), checkpointer=checkpointer.saver, name="chat")
         result = await collect(graph, ctx, prompt())
         assert result.finished.stop.reason == "end"
 

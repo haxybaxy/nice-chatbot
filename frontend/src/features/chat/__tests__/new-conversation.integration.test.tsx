@@ -78,7 +78,7 @@ describe("starting a conversation", () => {
           parts: [{ type: "text", text: "Hello?" }],
           model: DEFAULT_MODEL_ID,
           mode: "chat",
-          tools: { webSearch: false, code: false },
+          tools: { webSearch: true, code: false },
         },
       },
     ]);
@@ -88,8 +88,10 @@ describe("starting a conversation", () => {
     expect(screen.getByText("Hello?")).toBeInTheDocument();
     expect(screen.getAllByTestId("message-assistant")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "New conversation" })).toBeInTheDocument();
+    // The resumed run showed the pending dot under the user's message, never a banner; it is
+    // gone once the answer is in.
     await waitFor(() =>
-      expect(screen.queryByText(/picking up where it left off/)).not.toBeInTheDocument()
+      expect(screen.queryByRole("status", { name: "Waiting for a response" })).toBeNull()
     );
   });
 

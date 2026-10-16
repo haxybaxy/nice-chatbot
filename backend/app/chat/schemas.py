@@ -64,6 +64,7 @@ class ToolPartOut(BaseSchemaOut):
     input: object | None = None
     output: object | None = None
     error_text: str | None = None
+    provider_executed: bool | None = None  # the provider ran it itself (built-in web search)
 
 
 class DataPartOut(BaseSchemaOut):
@@ -163,6 +164,8 @@ class ModelOut(BaseSchemaOut):
     supports_tools: bool
     supports_reasoning: bool
     supports_vision: bool
+    web_search: bool  # what a run on this model can do on this server (the composer disables the rest)
+    code: bool
     is_default: bool
 
 

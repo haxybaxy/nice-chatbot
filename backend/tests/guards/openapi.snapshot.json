@@ -836,6 +836,10 @@
       "ModelOut": {
         "description": "One entry of the model picker, built from the catalog's ``ModelSpec`` by attribute.",
         "properties": {
+          "code": {
+            "title": "Code",
+            "type": "boolean"
+          },
           "displayName": {
             "title": "Displayname",
             "type": "string"
@@ -874,6 +878,10 @@
           },
           "tier": {
             "$ref": "#/components/schemas/Tier"
+          },
+          "webSearch": {
+            "title": "Websearch",
+            "type": "boolean"
           }
         },
         "required": [
@@ -885,6 +893,8 @@
           "supportsTools",
           "supportsReasoning",
           "supportsVision",
+          "webSearch",
+          "code",
           "isDefault"
         ],
         "title": "ModelOut",
@@ -1620,6 +1630,17 @@
               }
             ],
             "title": "Output"
+          },
+          "providerExecuted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerexecuted"
           },
           "state": {
             "enum": [
