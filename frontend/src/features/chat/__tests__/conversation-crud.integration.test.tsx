@@ -59,10 +59,10 @@ describe("the conversation list", () => {
 
     expect(await screen.findByText("Today")).toBeInTheDocument();
     expect(screen.getByText("Yesterday")).toBeInTheDocument();
-    expect(screen.queryByText("Earlier")).toBeNull();
+    expect(screen.queryByText("Previous 7 days")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByText("Earlier")).toBeInTheDocument();
+    expect(await screen.findByText("Previous 7 days")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Last week's chat/ })).toBeInTheDocument();
     expect(cursors).toEqual([null, "page-2"]);
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();

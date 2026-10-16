@@ -61,15 +61,20 @@ describe("groupConversationsByDay", () => {
         makeConversation({ id: "a", lastMessageAt: at(0, 1) }),
         makeConversation({ id: "b", lastMessageAt: at(1, 23) }),
         makeConversation({ id: "c", lastMessageAt: at(2) }),
-        makeConversation({ id: "d", lastMessageAt: at(30) }),
+        makeConversation({ id: "d", lastMessageAt: at(7) }),
+        makeConversation({ id: "e", lastMessageAt: at(30) }),
+        makeConversation({ id: "f", lastMessageAt: at(31) }),
       ],
       now
     );
 
+    // A boundary day (7, 30) counts from the start of today, so it is still inside its window.
     expect(groups.map((group) => [group.label, group.items.map((item) => item.id)])).toEqual([
       ["Today", ["a"]],
       ["Yesterday", ["b"]],
-      ["Earlier", ["c", "d"]],
+      ["Previous 7 days", ["c", "d"]],
+      ["Previous 30 days", ["e"]],
+      ["Older", ["f"]],
     ]);
   });
 });

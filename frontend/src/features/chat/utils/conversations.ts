@@ -5,7 +5,10 @@ export function conversationTitle(conversation: Pick<Conversation, "title">): st
   return conversation.title ?? "New conversation";
 }
 
-type ConversationGroupLabel = "Today" | "Yesterday" | "Earlier";
+/** ChatGPT's sidebar sections, in order. */
+const LABELS = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"] as const;
+
+type ConversationGroupLabel = (typeof LABELS)[number];
 
 export interface ConversationGroup {
   label: ConversationGroupLabel;
@@ -13,7 +16,23 @@ export interface ConversationGroup {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const LABELS: readonly ConversationGroupLabel[] = ["Today", "Yesterday", "Earlier"];
+
+/** The section of a moment, counted in local days back from the start of today. */
+function labelFor(at: number, startOfToday: number): ConversationGroupLabel {
+  if (at >= startOfToday) {
+    return "Today";
+  }
+  if (at >= startOfToday - DAY_MS) {
+    return "Yesterday";
+  }
+  if (at >= startOfToday - 7 * DAY_MS) {
+    return "Previous 7 days";
+  }
+  if (at >= startOfToday - 30 * DAY_MS) {
+    return "Previous 30 days";
+  }
+  return "Older";
+}
 
 /** Bucket conversations (already newest-first from the backend) by the local day of their last message. */
 export function groupConversationsByDay(
@@ -21,18 +40,14 @@ export function groupConversationsByDay(
   now: Date = new Date()
 ): ConversationGroup[] {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfYesterday = startOfToday - DAY_MS;
-  const buckets: Record<ConversationGroupLabel, Conversation[]> = {
-    Today: [],
-    Yesterday: [],
-    Earlier: [],
-  };
+  const buckets = new Map<ConversationGroupLabel, Conversation[]>(
+    LABELS.map((label) => [label, []])
+  );
   for (const conversation of conversations) {
-    const at = new Date(conversation.lastMessageAt).getTime();
-    const label = at >= startOfToday ? "Today" : at >= startOfYesterday ? "Yesterday" : "Earlier";
-    buckets[label].push(conversation);
+    const label = labelFor(new Date(conversation.lastMessageAt).getTime(), startOfToday);
+    buckets.get(label)?.push(conversation);
   }
-  return LABELS.map((label) => ({ label, items: buckets[label] })).filter(
+  return LABELS.map((label) => ({ label, items: buckets.get(label) ?? [] })).filter(
     (group) => group.items.length > 0
   );
 }
